@@ -11,8 +11,55 @@ import {
   PaymentMethod,
   ProductStatus,
 } from "@prisma/client";
-import { AppError } from "@/lib/app-error";
+import { AppError, rethrowPrisma } from "@/lib/app-error";
 import { archiveProduct } from "./archive";
+
+async function validateProductInput(
+  data: {
+    name: string;
+    sku: string;
+    categoryId: string;
+    sellingPrice: number;
+    costPrice: number;
+    stock: number;
+    lowStockAlert: number;
+  },
+  excludeProductId?: string
+) {
+  const name = data.name?.trim();
+  const sku = data.sku?.trim();
+  const categoryId = data.categoryId?.trim();
+
+  if (!name) throw new AppError("Product name is required.");
+  if (!sku) throw new AppError("SKU is required.");
+  if (!categoryId) throw new AppError("Please select a category.");
+
+  if (Number.isNaN(data.sellingPrice) || data.sellingPrice < 0) {
+    throw new AppError("Selling price must be a valid number.");
+  }
+
+  const category = await prisma.category.findFirst({
+    where: { id: categoryId, active: true },
+  });
+  if (!category) {
+    throw new AppError("Invalid category. Please select an active category.");
+  }
+
+  const existingSku = await prisma.product.findUnique({
+    where: { sku },
+    select: { id: true, name: true, deletedAt: true },
+  });
+  if (existingSku && existingSku.id !== excludeProductId) {
+    if (existingSku.deletedAt) {
+      throw new AppError(
+        `SKU "${sku}" belongs to archived product "${existingSku.name}". Restore it from Archive or use a different SKU.`
+      );
+    }
+    throw new AppError(`SKU "${sku}" is already used by "${existingSku.name}".`);
+  }
+
+  return { name, sku, categoryId, category };
+}
 
 const activeProductFilter = {
   isActive: true,
@@ -77,12 +124,33 @@ export async function createProduct(data: {
   categoryId: string;
 }) {
   const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
 
-  const product = await prisma.product.create({ data });
-  await logActivity("CREATE", "Product", product.id, product.name);
-  revalidatePath("/products");
-  return product;
+  try {
+    const validated = await validateProductInput(data);
+
+    const product = await prisma.product.create({
+      data: {
+        name: validated.name,
+        sku: validated.sku,
+        barcode: data.barcode?.trim() || null,
+        sellingPrice: data.sellingPrice,
+        costPrice: data.costPrice ?? 0,
+        stock: data.stock ?? 0,
+        lowStockAlert: data.lowStockAlert ?? 5,
+        categoryId: validated.categoryId,
+        isActive: true,
+        status: ProductStatus.ACTIVE,
+      },
+    });
+
+    await logActivity("CREATE", "Product", product.id, product.name);
+    revalidatePath("/products");
+    revalidatePath("/pos");
+    return product;
+  } catch (error) {
+    rethrowPrisma(error);
+  }
 }
 
 export async function updateProduct(
@@ -100,12 +168,34 @@ export async function updateProduct(
   }>
 ) {
   const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
 
-  const product = await prisma.product.update({ where: { id }, data });
-  await logActivity("UPDATE", "Product", id);
-  revalidatePath("/products");
-  return product;
+  try {
+    if (data.name !== undefined || data.sku !== undefined || data.categoryId !== undefined) {
+      const current = await prisma.product.findUnique({ where: { id } });
+      if (!current) throw new AppError("Product not found.");
+      await validateProductInput(
+        {
+          name: data.name ?? current.name,
+          sku: data.sku ?? current.sku,
+          categoryId: data.categoryId ?? current.categoryId,
+          sellingPrice: data.sellingPrice ?? current.sellingPrice,
+          costPrice: data.costPrice ?? current.costPrice,
+          stock: data.stock ?? current.stock,
+          lowStockAlert: data.lowStockAlert ?? current.lowStockAlert,
+        },
+        id
+      );
+    }
+
+    const product = await prisma.product.update({ where: { id }, data });
+    await logActivity("UPDATE", "Product", id);
+    revalidatePath("/products");
+    revalidatePath("/pos");
+    return product;
+  } catch (error) {
+    rethrowPrisma(error);
+  }
 }
 
 export async function deleteProduct(id: string, archiveReason?: string) {
@@ -145,12 +235,25 @@ export async function deleteCategory(id: string) {
 
 export async function createCategory(data: { name: string; description?: string; type?: string }) {
   const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
 
-  const category = await prisma.category.create({ data });
-  await logActivity("CREATE", "Category", category.id, category.name);
-  revalidatePath("/products");
-  return category;
+  const name = data.name?.trim();
+  if (!name) throw new AppError("Category name is required.");
+
+  try {
+    const category = await prisma.category.create({
+      data: {
+        name,
+        description: data.description?.trim() || null,
+        type: data.type?.trim() || "GENERAL",
+      },
+    });
+    await logActivity("CREATE", "Category", category.id, category.name);
+    revalidatePath("/products");
+    return category;
+  } catch (error) {
+    rethrowPrisma(error);
+  }
 }
 
 export async function completeSale(data: {

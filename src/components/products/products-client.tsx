@@ -62,22 +62,59 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
   const [confirm, setConfirm] = useState<{ type: "category"; id: string; name: string } | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<{ id: string; name: string } | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
+  const [catType, setCatType] = useState("GENERAL");
   const { toast } = useToast();
   const router = useRouter();
 
+  const activeCategories = categories.filter((c) => c.active);
+  const defaultCategoryId = activeCategories[0]?.id ?? "";
+
+  const openAddProduct = () => {
+    setEditing(null);
+    setCategoryId(defaultCategoryId);
+    setDialogOpen(true);
+  };
+
+  const openEditProduct = (product: ProductsClientProps["products"][0]) => {
+    setEditing(product);
+    setCategoryId(product.categoryId);
+    setDialogOpen(true);
+  };
+
+  const openAddCategory = () => {
+    setEditingCat(null);
+    setCatType("GENERAL");
+    setCatDialogOpen(true);
+  };
+
+  const openEditCategory = (cat: ProductsClientProps["categories"][0]) => {
+    setEditingCat(cat);
+    setCatType(cat.type);
+    setCatDialogOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const resolvedCategoryId = categoryId || editing?.categoryId || "";
+    if (!resolvedCategoryId) {
+      toast({
+        title: "Category required",
+        description: "Please select a category before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const data = {
-      name: form.get("name") as string,
-      sku: form.get("sku") as string,
+      name: (form.get("name") as string).trim(),
+      sku: (form.get("sku") as string).trim(),
       barcode: (form.get("barcode") as string) || undefined,
       sellingPrice: Number(form.get("sellingPrice")),
       costPrice: Number(form.get("costPrice")),
       stock: Number(form.get("stock")),
       lowStockAlert: Number(form.get("lowStockAlert")),
-      categoryId: form.get("categoryId") as string,
+      categoryId: resolvedCategoryId,
     };
     try {
       if (editing) {
@@ -102,9 +139,9 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const data = {
-      name: form.get("name") as string,
+      name: (form.get("name") as string).trim(),
       description: (form.get("description") as string) || undefined,
-      type: (form.get("type") as string) || "GENERAL",
+      type: catType || "GENERAL",
     };
     try {
       if (editingCat) {
@@ -162,8 +199,8 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
     <div>
       <PageHeader title="Products" description="Manage products and categories">
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setEditingCat(null); setCatDialogOpen(true); }}>Add Category</Button>
-          <Button variant="gold" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+          <Button variant="outline" onClick={openAddCategory}>Add Category</Button>
+          <Button variant="gold" onClick={openAddProduct}>
             <Plus className="h-4 w-4 mr-1" /> Add Product
           </Button>
         </div>
@@ -201,7 +238,7 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
                       <p className="font-bold text-gold">{formatCurrency(product.sellingPrice)}</p>
                       <p className="text-xs text-muted-foreground">Cost: {formatCurrency(product.costPrice)}</p>
                     </div>
-                    <Button size="icon" variant="ghost" onClick={() => { setEditing(product); setDialogOpen(true); }}>
+                    <Button size="icon" variant="ghost" onClick={() => openEditProduct(product)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
@@ -235,7 +272,7 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
                       <p className="text-xs text-muted-foreground mt-1">{cat._count.products} product(s)</p>
                     </div>
                     <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => { setEditingCat(cat); setCatDialogOpen(true); }}>
+                      <Button size="icon" variant="ghost" onClick={() => openEditCategory(cat)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
@@ -271,18 +308,25 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
               <div className="space-y-2"><Label>Low Stock Alert</Label><Input name="lowStockAlert" type="number" defaultValue={editing?.lowStockAlert || 5} /></div>
               <div className="space-y-2 col-span-2">
                 <Label>Category</Label>
-                <Select value={categoryId || editing?.categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>
-                    {categories.filter((c) => c.active).map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <input type="hidden" name="categoryId" value={categoryId || editing?.categoryId || ""} />
+                {activeCategories.length === 0 ? (
+                  <p className="text-sm text-destructive">No active categories. Add a category first.</p>
+                ) : (
+                  <Select
+                    value={categoryId || editing?.categoryId || defaultCategoryId}
+                    onValueChange={setCategoryId}
+                    required
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectContent>
+                      {activeCategories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || activeCategories.length === 0}>
               {editing ? "Update" : "Create"} Product
             </Button>
           </form>
@@ -299,7 +343,7 @@ export function ProductsClient({ products, categories, loadError }: ProductsClie
             <div className="space-y-2"><Label>Description</Label><Input name="description" defaultValue={editingCat?.description || ""} /></div>
             <div className="space-y-2">
               <Label>Type</Label>
-              <Select name="type" defaultValue={editingCat?.type || "GENERAL"}>
+              <Select value={catType} onValueChange={setCatType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALCOHOL">Alcohol</SelectItem>
