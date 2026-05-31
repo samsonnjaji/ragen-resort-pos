@@ -24,6 +24,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNavItems } from "@/lib/permissions";
@@ -48,6 +49,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   BarChart3,
   Settings,
   Users,
+  Archive,
 };
 
 export function Sidebar() {

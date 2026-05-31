@@ -13,16 +13,23 @@ export async function logActivity(
   action: string,
   entity: string,
   entityId?: string,
-  details?: string
+  details?: string,
+  metadata?: Record<string, string | number | boolean | null | undefined>
 ) {
   const session = await getSession();
+  const payload = {
+    message: details ?? null,
+    userEmail: session?.user?.email ?? null,
+    ...metadata,
+  };
+
   await prisma.activityLog.create({
     data: {
       userId: session?.user?.id,
       action,
       entity,
       entityId,
-      details,
+      details: JSON.stringify(payload),
     },
   });
 }

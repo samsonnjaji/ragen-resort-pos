@@ -22,7 +22,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/app-error";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Archive } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ProductsClientProps {
@@ -49,16 +49,19 @@ interface ProductsClientProps {
     active: boolean;
     _count: { products: number };
   }>;
+  loadError?: string;
 }
 
-export function ProductsClient({ products, categories }: ProductsClientProps) {
+export function ProductsClient({ products, categories, loadError }: ProductsClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [catDialogOpen, setCatDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductsClientProps["products"][0] | null>(null);
   const [editingCat, setEditingCat] = useState<ProductsClientProps["categories"][0] | null>(null);
   const [categoryId, setCategoryId] = useState("");
   const [loading, setLoading] = useState(false);
-  const [confirm, setConfirm] = useState<{ type: "product" | "category"; id: string; name: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ type: "category"; id: string; name: string } | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
   const { toast } = useToast();
   const router = useRouter();
 
@@ -121,17 +124,31 @@ export function ProductsClient({ products, categories }: ProductsClientProps) {
     }
   };
 
+  const handleArchive = async () => {
+    if (!archiveTarget) return;
+    setLoading(true);
+    try {
+      await deleteProduct(archiveTarget.id, archiveReason);
+      toast({
+        title: "Product archived",
+        description: "Hidden from POS and active products. Restore from Archive if needed.",
+      });
+      setArchiveTarget(null);
+      setArchiveReason("");
+      router.refresh();
+    } catch (err) {
+      toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!confirm) return;
     setLoading(true);
     try {
-      if (confirm.type === "product") {
-        await deleteProduct(confirm.id);
-        toast({ title: "Product removed", description: "Hidden from POS and product list." });
-      } else {
-        await deleteCategory(confirm.id);
-        toast({ title: "Category deleted" });
-      }
+      await deleteCategory(confirm.id);
+      toast({ title: "Category deleted" });
       setConfirm(null);
       router.refresh();
     } catch (err) {
@@ -152,6 +169,10 @@ export function ProductsClient({ products, categories }: ProductsClientProps) {
         </div>
       </PageHeader>
 
+      {loadError && (
+        <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">{loadError}</div>
+      )}
+
       <Tabs defaultValue="products">
         <TabsList>
           <TabsTrigger value="products">Products ({products.length})</TabsTrigger>
@@ -166,7 +187,7 @@ export function ProductsClient({ products, categories }: ProductsClientProps) {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{product.name}</span>
-                      <Badge variant="outline">{product.category.name}</Badge>
+                      <Badge variant="outline">{product.category?.name ?? "Uncategorized"}</Badge>
                       {!product.isActive && <Badge variant="destructive">Inactive</Badge>}
                       {product._count.orderItems > 0 && (
                         <Badge variant="secondary">{product._count.orderItems} sales</Badge>
@@ -186,10 +207,14 @@ export function ProductsClient({ products, categories }: ProductsClientProps) {
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="text-destructive"
-                      onClick={() => setConfirm({ type: "product", id: product.id, name: product.name })}
+                      className="text-amber-500"
+                      title="Hides this product from selling but keeps history safe."
+                      onClick={() => {
+                        setArchiveReason("");
+                        setArchiveTarget({ id: product.id, name: product.name });
+                      }}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Archive className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
@@ -292,15 +317,38 @@ export function ProductsClient({ products, categories }: ProductsClientProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-serif">Archive product?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Archive &quot;{archiveTarget?.name}&quot;? It will be hidden from POS and the active products list. Sales history stays safe. You can restore it from Archive.
+          </p>
+          <div className="space-y-2">
+            <Label>Reason (optional)</Label>
+            <Input
+              value={archiveReason}
+              onChange={(e) => setArchiveReason(e.target.value)}
+              placeholder="e.g. Discontinued, seasonal item"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setArchiveTarget(null)} disabled={loading}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={handleArchive} disabled={loading}>
+              {loading ? "Archiving..." : "Archive"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={!!confirm}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Are you sure?"
-        description={
-          confirm?.type === "product"
-            ? `Remove "${confirm.name}"? It will be hidden from POS. Sales history is preserved.`
-            : `Delete category "${confirm?.name}"? This cannot be undone if no products are assigned.`
-        }
+        description={`Delete category "${confirm?.name}"? This cannot be undone if no products are assigned.`}
         confirmLabel="Delete"
         loading={loading}
         onConfirm={handleConfirmDelete}

@@ -12,6 +12,7 @@ import {
   ProductStatus,
 } from "@prisma/client";
 import { AppError } from "@/lib/app-error";
+import { archiveProduct } from "./archive";
 
 const activeProductFilter = {
   isActive: true,
@@ -39,14 +40,20 @@ export async function getCategories() {
 
 export async function getAllCategories() {
   return prisma.category.findMany({
-    include: { _count: { select: { products: true } } },
+    include: {
+      _count: {
+        select: {
+          products: { where: { deletedAt: null, isActive: true } },
+        },
+      },
+    },
     orderBy: { name: "asc" },
   });
 }
 
 export async function getAllProductsAdmin() {
   return prisma.product.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, isActive: true },
     include: { category: true, _count: { select: { orderItems: true } } },
     orderBy: { name: "asc" },
   });
@@ -101,33 +108,8 @@ export async function updateProduct(
   return product;
 }
 
-export async function deleteProduct(id: string) {
-  const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
-
-  const product = await prisma.product.findUnique({
-    where: { id },
-    include: { _count: { select: { orderItems: true } } },
-  });
-  if (!product) throw new AppError("Product not found");
-  if (product.deletedAt) throw new AppError("Product is already deleted");
-
-  await prisma.product.update({
-    where: { id },
-    data: {
-      isActive: false,
-      deletedAt: new Date(),
-      status: ProductStatus.INACTIVE,
-    },
-  });
-
-  const detail =
-    product._count.orderItems > 0
-      ? `Soft deleted (has ${product._count.orderItems} sale records)`
-      : "Soft deleted";
-  await logActivity("DELETE", "Product", id, detail);
-  revalidatePath("/products");
-  revalidatePath("/pos");
+export async function deleteProduct(id: string, archiveReason?: string) {
+  return archiveProduct(id, archiveReason);
 }
 
 export async function updateCategory(

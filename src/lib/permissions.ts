@@ -17,6 +17,7 @@ export const ROUTE_PERMISSIONS: Record<string, AppRole[]> = {
   "/reports": ["ADMIN"],
   "/settings": ["ADMIN"],
   "/users": ["ADMIN"],
+  "/archive": ["ADMIN"],
 };
 
 export function canAccessRoute(role: string, path: string): boolean {
@@ -34,6 +35,7 @@ export function getNavItems(role: string) {
     { href: "/restaurant", label: "Restaurant", icon: "UtensilsCrossed" },
     { href: "/bar", label: "Bar", icon: "Wine" },
     { href: "/products", label: "Products", icon: "Package" },
+    { href: "/archive", label: "Archive", icon: "Archive" },
     { href: "/inventory", label: "Inventory", icon: "Warehouse" },
     { href: "/rooms", label: "Rooms", icon: "BedDouble" },
     { href: "/bookings", label: "Reservations", icon: "CalendarDays" },

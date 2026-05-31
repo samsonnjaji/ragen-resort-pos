@@ -109,6 +109,7 @@ model User {
   payments      Payment[]
   activityLogs  ActivityLog[]
   inventoryMovements InventoryMovement[]
+  archivedProducts Product[] @relation("ArchivedProducts")
 }
 
 model Category {
@@ -135,11 +136,15 @@ model Product {
   status          ProductStatus @default(ACTIVE)
   isActive        Boolean       @default(true)
   deletedAt       DateTime?
+  archivedAt      DateTime?
+  archivedById    String?
+  archiveReason   String?
   categoryId      String
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   category          Category            @relation(fields: [categoryId], references: [id])
+  archivedBy        User?               @relation("ArchivedProducts", fields: [archivedById], references: [id], onDelete: SetNull)
   orderItems        OrderItem[]
   inventoryMovements InventoryMovement[]
   purchaseItems     PurchaseItem[]
