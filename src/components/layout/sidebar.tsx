@@ -30,6 +30,7 @@ import { getNavItems } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { ROLE_LABELS } from "@/lib/utils";
+import { ConnectionStatusBadge } from "@/components/offline-banner";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
@@ -68,6 +69,7 @@ export function Sidebar() {
           <div>
             <h1 className="font-serif text-lg font-bold text-gold leading-tight">RAGEN RESORT</h1>
             <p className="text-xs text-emerald-300/70">Point of Sale</p>
+            <div className="mt-2"><ConnectionStatusBadge /></div>
           </div>
         )}
       </div>
@@ -106,11 +108,14 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
-          className={cn("w-full text-emerald-200 hover:text-white hover:bg-emerald-800/50", collapsed && "w-10")}
+          className={cn(
+            "w-full text-emerald-200 hover:text-white hover:bg-red-900/40 border border-transparent hover:border-red-500/30",
+            collapsed ? "w-11 h-11" : "h-12 touch-target"
+          )}
           onClick={() => signOut({ callbackUrl: "/login" })}
         >
-          <LogOut className="h-4 w-4" />
-          {!collapsed && <span className="ml-2">Sign Out</span>}
+          <LogOut className="h-5 w-5" />
+          {!collapsed && <span className="ml-2 font-medium">Sign Out</span>}
         </Button>
       </div>
     </>
@@ -153,7 +158,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background">
       <Sidebar />
       <main className="lg:pl-64 transition-all duration-300">
-        <div className="min-h-screen p-4 pt-16 lg:p-6 lg:pt-6">{children}</div>
+        <div className="min-h-screen p-4 pt-24 lg:p-6 lg:pt-6">{children}</div>
       </main>
     </div>
   );

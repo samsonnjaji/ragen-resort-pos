@@ -23,6 +23,7 @@ import {
 import { createPurchase, createSupplier, receivePurchase } from "@/lib/actions/admin";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
 import { Plus, PackageCheck } from "lucide-react";
 
@@ -46,10 +47,12 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<{ productId: string; quantity: number; unitCost: number }[]>([]);
   const { toast } = useToast();
+  const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
 
   const handleSupplier = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Creating a supplier")) return;
     setLoading(true);
     const form = new FormData(e.currentTarget);
     try {
@@ -70,6 +73,7 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
 
   const handlePurchase = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Creating a purchase order")) return;
     if (items.length === 0) {
       toast({ title: "Add at least one item", variant: "destructive" });
       return;
@@ -103,8 +107,8 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
     <div>
       <PageHeader title="Purchases" description="Manage suppliers and purchase orders">
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setSupplierOpen(true)}>Add Supplier</Button>
-          <Button variant="gold" onClick={() => { setItems([]); setPurchaseOpen(true); }}>
+          <Button variant="outline" onClick={() => setSupplierOpen(true)} disabled={offlineDisabled}>Add Supplier</Button>
+          <Button variant="gold" onClick={() => { setItems([]); setPurchaseOpen(true); }} disabled={offlineDisabled}>
             <Plus className="h-4 w-4 mr-1" /> New Purchase
           </Button>
         </div>
@@ -128,7 +132,8 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-gold">{formatCurrency(purchase.totalAmount)}</span>
                   {purchase.status === "PENDING" && (
-                    <Button size="sm" variant="gold" onClick={async () => {
+                    <Button size="sm" variant="gold" disabled={offlineDisabled} onClick={async () => {
+                      if (blockIfOffline("Receiving goods")) return;
                       await receivePurchase(purchase.id);
                       router.refresh();
                       toast({ title: "Goods received, stock updated" });
@@ -150,7 +155,7 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
             <div className="space-y-2"><Label>Name</Label><Input name="name" required /></div>
             <div className="space-y-2"><Label>Phone</Label><Input name="phone" /></div>
             <div className="space-y-2"><Label>Email</Label><Input name="email" type="email" /></div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>Create Supplier</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled}>Create Supplier</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -200,7 +205,7 @@ export function PurchasesClient({ purchases, suppliers, products }: PurchasesCli
               ))}
             </div>
             <div className="space-y-2"><Label>Notes</Label><Input name="notes" /></div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>Create Purchase Order</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled}>Create Purchase Order</Button>
           </form>
         </DialogContent>
       </Dialog>

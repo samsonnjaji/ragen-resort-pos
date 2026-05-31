@@ -164,7 +164,7 @@ async function main() {
     },
   });
 
-  console.log("Seed completed successfully!");
+  console.log("IMPORTANT: Change the admin password after production deployment!");
   console.log("Admin:     admin@ragenresort.com / admin123");
   console.log("Cashier:   cashier@ragenresort.com / cashier123");
   console.log("Restaurant: restaurant@ragenresort.com / restaurant123");

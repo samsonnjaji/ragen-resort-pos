@@ -21,33 +21,120 @@ Production-ready hospitality management platform for resorts — POS, bar, resta
 | **Reports** | Sales, profit, inventory, occupancy, cashiers, CSV export |
 | **Users** | Role-based access (Admin, Cashier, Bar, Restaurant, Room Manager) |
 | **Settings** | Business info, 16% tax, KES currency, receipt footer |
-| **PWA** | Installable on mobile/desktop (Add to Home Screen) |
+| **PWA** | Installable on Android/iPad tablets (Add to Home Screen) |
 
 ## Tech Stack
 
-Next.js 15 · TypeScript · TailwindCSS · ShadCN UI · Prisma · SQLite (dev) / PostgreSQL (prod) · NextAuth · Zustand · React Hook Form · Zod · Recharts
+Next.js 15 · TypeScript · TailwindCSS · ShadCN UI · Prisma · PostgreSQL (Neon) · NextAuth · Zustand · React Hook Form · Zod · Recharts · Vercel
 
-## Quick Start
+---
+
+## Production deployment (Vercel + Neon)
+
+This is the recommended setup for resort tablets. The app runs in the cloud — **no PC or laptop needs to stay on** at the resort.
+
+```
+[Neon PostgreSQL]  ← live database (cloud)
+       ↑
+[Vercel]           ← RAGEN RESORT POS (https://your-app.vercel.app)
+       ↑ internet
+[Tablet 1] [Tablet 2] [Tablet 3]  ← Chrome/Safari PWA, same cloud URL
+```
+
+### Step 1 — Create Neon database
+
+1. Sign up at [neon.tech](https://neon.tech) and create a project (e.g. `ragen-resort-pos`).
+2. Copy both connection strings from the Neon dashboard:
+   - **Pooled** → use as `DATABASE_URL` (for the app on Vercel)
+   - **Direct** → use as `DIRECT_URL` (for Prisma migrations)
+3. Append `?sslmode=require` if not already present.
+
+### Step 2 — Deploy to Vercel
+
+1. Import [github.com/samsonnjaji/ragen-resort-pos](https://github.com/samsonnjaji/ragen-resort-pos) at [vercel.com/new](https://vercel.com/new).
+2. Add environment variables in **Project → Settings → Environment Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | Neon **pooled** PostgreSQL connection string |
+| `DIRECT_URL` | Neon **direct** connection string (for migrations) |
+| `NEXTAUTH_SECRET` | Random secret — run `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | Your Vercel URL, e.g. `https://ragen-resort-pos.vercel.app` (no trailing slash) |
+
+3. Deploy. Vercel runs `prisma generate && next build` automatically.
+
+### Step 3 — Apply database schema and seed
+
+Run **once** from your machine (with the same env vars), or use Neon SQL editor after exporting the migration:
 
 ```bash
-git clone https://github.com/samsonnjaji/ragen-resort-pos.git
-cd ragen-resort-pos
-npm install
 cp .env.example .env
+# Fill in DATABASE_URL, DIRECT_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+
+npm install
+npm run setup:prod
+```
+
+`setup:prod` runs `prisma migrate deploy` then seeds sample data.
+
+**Alternative (first-time only):** if migrations fail, you can use:
+
+```bash
 npx prisma db push
 npm run db:seed
-npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+### Step 4 — Change admin password
 
-### One-Command Setup
+After first login, go to **Users** and change the admin password immediately. Default seed credentials are for initial setup only (see below).
 
-```bash
-npm install && npm run setup && npm run dev
-```
+---
 
-## Demo Credentials
+## Tablet access (Android / iPad)
+
+No Play Store or App Store download is required.
+
+1. Connect the tablet to **Wi-Fi or mobile data** (internet required).
+2. Open Chrome (Android), Edge, or Safari (iPad).
+3. Go to your deployed URL, e.g. **`https://YOUR-VERCEL-DOMAIN`**
+4. Log in with staff credentials (cashier account for POS tablets).
+5. Install the app:
+   - **Android Chrome:** Menu (⋮) → **Add to Home screen** / **Install app**
+   - **iPad Safari:** Share → **Add to Home Screen**
+6. Launch **RAGEN POS** from the home screen (standalone, full-screen).
+
+### How it works on tablets
+
+- The tablet **does not store the main database** — all data lives in Neon PostgreSQL.
+- Multiple tablets can log in and use the **same live system** simultaneously.
+- **Internet is required** for sales, payments, bookings, inventory, and check-in/out.
+- If the connection drops, a red banner appears and critical actions are **blocked** (no fake offline sales).
+- Static UI assets may be cached by the PWA service worker for faster loading only.
+
+### Receipt printing
+
+1. Complete a sale → tap **Print Receipt**
+2. Uses browser print dialog (optimized for **80mm thermal** paper)
+3. Pair a Bluetooth printer with the tablet, or use a network printer
+
+---
+
+## Environment variables
+
+See `.env.example`:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Neon PostgreSQL connection string (pooled for production) |
+| `DIRECT_URL` | Neon direct connection (required for `prisma migrate`) |
+| `NEXTAUTH_SECRET` | Secure random secret for session encryption |
+| `NEXTAUTH_URL` | Full deployment URL (Vercel domain or `http://localhost:3000` locally) |
+
+---
+
+## Initial seed credentials
+
+Used only for first-time setup after seeding. **Change the admin password after deployment.**
 
 | Role | Email | Password |
 |------|-------|----------|
@@ -57,64 +144,96 @@ npm install && npm run setup && npm run dev
 | Bar | bar@ragenresort.com | bar123 |
 | Room Manager | rooms@ragenresort.com | rooms123 |
 
-## Database
+Passwords are **not shown** on the login screen.
 
-**Development (default):** SQLite — no PostgreSQL install required.
+---
 
-```env
-DATABASE_URL="file:./dev.db"
+## Local development
+
+Requires PostgreSQL (local install or a Neon dev branch):
+
+```bash
+git clone https://github.com/samsonnjaji/ragen-resort-pos.git
+cd ragen-resort-pos
+npm install
+cp .env.example .env
+# Set DATABASE_URL, DIRECT_URL, NEXTAUTH_URL=http://localhost:3000, NEXTAUTH_SECRET
+
+npx prisma migrate dev   # or: npx prisma db push
+npm run db:seed
+npm run dev
 ```
 
-**Production:** Switch `prisma/schema.prisma` provider to `postgresql` and set:
+Open [http://localhost:3000](http://localhost:3000)
 
-```env
-DATABASE_URL="postgresql://user:password@host:5432/ragen_resort"
-NEXTAUTH_URL="https://your-domain.com"
-NEXTAUTH_SECRET="strong-random-secret"
+### Optional: LAN testing (dev only)
+
+To test tablet access on the same Wi-Fi during development:
+
+```bash
+npm run dev:lan
+# Open http://YOUR-PC-IP:3000 on the tablet
 ```
 
-## Seed Data
+This is for testing only. Production tablets should use the **Vercel URL**.
 
-- Rooms 101–110
-- 14 products (Tusker, Guinness, Pilau, Chicken, etc.)
-- 8 categories
-- Admin + Cashier + role users
-- Default RAGEN RESORT settings
+---
 
 ## Scripts
 
 ```bash
-npm run dev          # Development server
-npm run build        # Production build
-npm run start        # Production server
-npm run setup        # db push + seed
-npm run db:seed      # Seed sample data
-npm run db:studio    # Prisma Studio
+npm run dev              # Development server
+npm run dev:lan          # Dev over Wi-Fi (local testing)
+npm run build            # prisma generate + production build
+npm run start            # Production server
+npm run db:seed          # Seed sample data
+npm run db:migrate       # Apply migrations (production: migrate deploy)
+npm run db:migrate:dev   # Create/apply migrations (development)
+npm run setup:prod       # migrate deploy + seed (one-time production setup)
+npm run db:studio        # Prisma Studio
 ```
 
-## Project Structure
+---
+
+## Offline / connection handling
+
+- Service worker caches **static assets only** — not sales or inventory data.
+- Health check polls `/api/health` every 15 seconds.
+- When offline or server unreachable:
+  - Banner: **Connection lost** or **Server unavailable**
+  - Blocked: POS sales, payments, stock updates, bookings, check-in/out, purchases
+  - Tap **Retry** when connection returns
+
+---
+
+## Security
+
+- Role-based routes enforced via NextAuth middleware
+- Passwords hashed with bcrypt; never displayed in the UI
+- Change default admin password immediately after deployment
+- Set a strong `NEXTAUTH_SECRET` in Vercel (never commit `.env`)
+
+---
+
+## Project structure
 
 ```
 src/app/(dashboard)/   # Protected pages
 src/lib/actions/       # Server actions
 src/components/        # UI + feature components
 prisma/schema.prisma   # 18 database models
+prisma/migrations/     # PostgreSQL migrations
 prisma/seed.ts         # Sample data
-public/sw.js           # PWA service worker
+public/manifest.json   # PWA manifest
+public/sw.js           # Service worker (static cache only)
+vercel.json            # Vercel build config
 ```
-
-## Deployment
-
-1. Push to GitHub
-2. Set environment variables on host (Vercel, Railway, VPS)
-3. Use PostgreSQL in production
-4. Run `npx prisma db push && npm run db:seed && npm run build`
-5. Start with `npm start`
 
 ## Branding
 
-- **Name:** RAGEN RESORT
-- **Theme:** Premium resort — Emerald green, gold accents, dark mode
+- **Name:** RAGEN RESORT POS
+- **Short name:** RAGEN POS
+- **Theme:** Emerald green (`#059669`), gold accents, dark mode
 - **Currency:** KES
 
 ---

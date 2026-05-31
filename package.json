@@ -4,14 +4,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "dev:lan": "next dev --turbopack --hostname 0.0.0.0",
+    "build": "prisma generate && next build",
+    "vercel-build": "prisma generate && next build",
     "start": "next start",
+    "start:lan": "next start --hostname 0.0.0.0",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "setup": "prisma db push && npm run db:seed",
+    "setup:prod": "prisma migrate deploy && npm run db:seed",
     "postinstall": "prisma generate"
   },
   "dependencies": {

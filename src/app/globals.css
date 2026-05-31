@@ -66,4 +66,47 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  .tablet-pos-grid {
+    @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4;
+  }
+}
+
+/* 80mm thermal receipt (~72mm printable width) */
+.receipt-thermal {
+  width: 72mm;
+  max-width: 72mm;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #000;
+  background: #fff;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #receipt,
+  #receipt * {
+    visibility: visible;
+  }
+
+  #receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 72mm;
+  }
 }

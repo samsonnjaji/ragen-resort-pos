@@ -30,6 +30,7 @@ import {
 } from "@/lib/actions/rooms";
 import { formatCurrency, formatDateOnly } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
 import { Plus, LogIn, LogOut, X } from "lucide-react";
 
@@ -54,12 +55,14 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
   const [guestOpen, setGuestOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
 
   const availableRooms = rooms.filter((r) => r.status === "AVAILABLE");
 
   const handleGuest = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Creating a guest")) return;
     setLoading(true);
     const form = new FormData(e.currentTarget);
     try {
@@ -81,6 +84,7 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
 
   const handleBooking = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Creating a booking")) return;
     setLoading(true);
     const form = new FormData(e.currentTarget);
     try {
@@ -114,8 +118,8 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
     <div>
       <PageHeader title="Bookings" description="Manage guest reservations">
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setGuestOpen(true)}>Add Guest</Button>
-          <Button variant="gold" onClick={() => setBookingOpen(true)}>
+          <Button variant="outline" onClick={() => setGuestOpen(true)} disabled={offlineDisabled}>Add Guest</Button>
+          <Button variant="gold" onClick={() => setBookingOpen(true)} disabled={offlineDisabled}>
             <Plus className="h-4 w-4 mr-1" /> New Booking
           </Button>
         </div>
@@ -148,16 +152,25 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
                     <span className="font-bold text-gold mr-2">{formatCurrency(b.totalAmount)}</span>
                     {b.status === "RESERVED" && (
                       <>
-                        <Button size="sm" onClick={async () => { await checkInBooking(b.id); router.refresh(); toast({ title: "Checked in" }); }}>
+                        <Button size="sm" disabled={offlineDisabled} onClick={async () => {
+                          if (blockIfOffline("Check-in")) return;
+                          await checkInBooking(b.id); router.refresh(); toast({ title: "Checked in" });
+                        }}>
                           <LogIn className="h-3 w-3 mr-1" /> Check In
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { await cancelBooking(b.id); router.refresh(); }}>
+                        <Button size="sm" variant="destructive" disabled={offlineDisabled} onClick={async () => {
+                          if (blockIfOffline("Cancelling a booking")) return;
+                          await cancelBooking(b.id); router.refresh();
+                        }}>
                           <X className="h-3 w-3" />
                         </Button>
                       </>
                     )}
                     {b.status === "CHECKED_IN" && (
-                      <Button size="sm" variant="gold" onClick={async () => { await checkOutBooking(b.id); router.refresh(); toast({ title: "Checked out" }); }}>
+                      <Button size="sm" variant="gold" disabled={offlineDisabled} onClick={async () => {
+                        if (blockIfOffline("Check-out")) return;
+                        await checkOutBooking(b.id); router.refresh(); toast({ title: "Checked out" });
+                      }}>
                         <LogOut className="h-3 w-3 mr-1" /> Check Out
                       </Button>
                     )}
@@ -191,7 +204,7 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
             <div className="space-y-2"><Label>Phone</Label><Input name="phone" required /></div>
             <div className="space-y-2"><Label>Email</Label><Input name="email" type="email" /></div>
             <div className="space-y-2"><Label>National ID / Passport</Label><Input name="nationalId" /></div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>Create Guest</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled}>Create Guest</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -227,7 +240,7 @@ export function BookingsClient({ bookings, guests, rooms }: BookingsClientProps)
               <div className="space-y-2"><Label>Children</Label><Input name="children" type="number" defaultValue={0} min={0} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Input name="notes" /></div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>Create Booking</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled}>Create Booking</Button>
           </form>
         </DialogContent>
       </Dialog>

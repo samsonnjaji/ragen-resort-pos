@@ -24,6 +24,7 @@ import {
 import { stockIn, stockOut, adjustStock, recordWastage } from "@/lib/actions/inventory";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
 import { PackagePlus, PackageMinus, Settings2, Trash2 } from "lucide-react";
 
@@ -47,6 +48,7 @@ export function InventoryClient({ products, movements, lowStock }: InventoryClie
   const [actionType, setActionType] = useState<"in" | "out" | "adjust" | "wastage">("in");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
 
   const openDialog = (type: typeof actionType) => {
@@ -56,6 +58,7 @@ export function InventoryClient({ products, movements, lowStock }: InventoryClie
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Stock update")) return;
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const productId = form.get("productId") as string;
@@ -92,10 +95,10 @@ export function InventoryClient({ products, movements, lowStock }: InventoryClie
     <div>
       <PageHeader title="Inventory" description="Manage stock levels and track movements">
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => openDialog("in")}><PackagePlus className="h-4 w-4 mr-1" /> Stock In</Button>
-          <Button variant="outline" size="sm" onClick={() => openDialog("out")}><PackageMinus className="h-4 w-4 mr-1" /> Stock Out</Button>
-          <Button variant="outline" size="sm" onClick={() => openDialog("adjust")}><Settings2 className="h-4 w-4 mr-1" /> Adjust</Button>
-          <Button variant="outline" size="sm" onClick={() => openDialog("wastage")}><Trash2 className="h-4 w-4 mr-1" /> Wastage</Button>
+          <Button variant="outline" size="sm" disabled={offlineDisabled} onClick={() => openDialog("in")}><PackagePlus className="h-4 w-4 mr-1" /> Stock In</Button>
+          <Button variant="outline" size="sm" disabled={offlineDisabled} onClick={() => openDialog("out")}><PackageMinus className="h-4 w-4 mr-1" /> Stock Out</Button>
+          <Button variant="outline" size="sm" disabled={offlineDisabled} onClick={() => openDialog("adjust")}><Settings2 className="h-4 w-4 mr-1" /> Adjust</Button>
+          <Button variant="outline" size="sm" disabled={offlineDisabled} onClick={() => openDialog("wastage")}><Trash2 className="h-4 w-4 mr-1" /> Wastage</Button>
         </div>
       </PageHeader>
 
@@ -186,7 +189,7 @@ export function InventoryClient({ products, movements, lowStock }: InventoryClie
               <Label>Reason</Label>
               <Input name="reason" />
             </div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading}>Submit</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled}>Submit</Button>
           </form>
         </DialogContent>
       </Dialog>

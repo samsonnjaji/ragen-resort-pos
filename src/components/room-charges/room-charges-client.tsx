@@ -23,6 +23,7 @@ import {
 import { addRoomCharge } from "@/lib/actions/rooms";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
@@ -50,10 +51,12 @@ export function RoomChargesClient({ activeBookings, products }: RoomChargesClien
   const [selectedBooking, setSelectedBooking] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (blockIfOffline("Adding a room charge")) return;
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const booking = activeBookings.find((b) => b.id === selectedBooking);
@@ -82,7 +85,7 @@ export function RoomChargesClient({ activeBookings, products }: RoomChargesClien
   return (
     <div>
       <PageHeader title="Room Billing" description="Add charges to guest room accounts">
-        <Button variant="gold" onClick={() => setDialogOpen(true)} disabled={activeBookings.length === 0}>
+        <Button variant="gold" onClick={() => setDialogOpen(true)} disabled={activeBookings.length === 0 || offlineDisabled}>
           <Plus className="h-4 w-4 mr-1" /> Add Charge
         </Button>
       </PageHeader>
@@ -176,7 +179,7 @@ export function RoomChargesClient({ activeBookings, products }: RoomChargesClien
               <div className="space-y-2"><Label>Quantity</Label><Input name="quantity" type="number" defaultValue={1} min={1} /></div>
               <div className="space-y-2"><Label>Unit Price</Label><Input name="unitPrice" type="number" required /></div>
             </div>
-            <Button type="submit" variant="gold" className="w-full" disabled={loading || !selectedBooking}>Add Charge</Button>
+            <Button type="submit" variant="gold" className="w-full" disabled={loading || !selectedBooking || offlineDisabled}>Add Charge</Button>
           </form>
         </DialogContent>
       </Dialog>

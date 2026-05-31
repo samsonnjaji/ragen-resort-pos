@@ -23,6 +23,7 @@ import {
 import { createKitchenOrder, updateOrderStatus } from "@/lib/actions/products";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
 import { OrderStatus, OrderType } from "@prisma/client";
 import { ChefHat, CheckCircle, Clock, Plus, UtensilsCrossed } from "lucide-react";
@@ -46,6 +47,7 @@ const statusFlow: OrderStatus[] = ["PENDING", "PREPARING", "READY", "SERVED"];
 
 export function KitchenClient({ orders, products, title, type }: KitchenClientProps) {
   const { toast } = useToast();
+  const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,6 +59,7 @@ export function KitchenClient({ orders, products, title, type }: KitchenClientPr
   );
 
   const handleStatus = async (id: string, status: OrderStatus) => {
+    if (blockIfOffline("Updating order status")) return;
     try {
       await updateOrderStatus(id, status);
       toast({ title: `Order marked as ${status.toLowerCase()}` });
@@ -76,7 +79,7 @@ export function KitchenClient({ orders, products, title, type }: KitchenClientPr
   };
 
   const submitOrder = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || blockIfOffline("Creating an order ticket")) return;
     setLoading(true);
     try {
       const items = cart.map((c) => {
@@ -115,7 +118,7 @@ export function KitchenClient({ orders, products, title, type }: KitchenClientPr
   return (
     <div>
       <PageHeader title={title} description={`${type === "restaurant" ? "Kitchen" : "Bar"} order tickets`}>
-        <Button variant="gold" onClick={() => setDialogOpen(true)}>
+        <Button variant="gold" onClick={() => setDialogOpen(true)} disabled={offlineDisabled}>
           <Plus className="h-4 w-4 mr-1" /> New Ticket
         </Button>
       </PageHeader>
@@ -148,7 +151,7 @@ export function KitchenClient({ orders, products, title, type }: KitchenClientPr
                   <div className="flex items-center justify-between pt-2 border-t">
                     <span className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</span>
                     {next && (
-                      <Button size="sm" variant="gold" onClick={() => handleStatus(order.id, next)}>
+                      <Button size="sm" variant="gold" disabled={offlineDisabled} onClick={() => handleStatus(order.id, next)}>
                         Mark {next}
                       </Button>
                     )}
@@ -197,7 +200,7 @@ export function KitchenClient({ orders, products, title, type }: KitchenClientPr
                 })}
               </div>
             )}
-            <Button variant="gold" className="w-full" onClick={submitOrder} disabled={loading || cart.length === 0}>
+            <Button variant="gold" className="w-full" onClick={submitOrder} disabled={loading || cart.length === 0 || offlineDisabled}>
               Submit Ticket
             </Button>
           </div>

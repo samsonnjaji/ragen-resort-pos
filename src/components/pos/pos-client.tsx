@@ -26,6 +26,7 @@ import { completeSale, holdSale, getHeldSales, cancelOrder } from "@/lib/actions
 import { getSettings } from "@/lib/actions/dashboard";
 import { Receipt, printReceipt } from "@/components/pos/receipt";
 import { useToast } from "@/hooks/use-toast";
+import { useRequireConnection } from "@/hooks/use-require-connection";
 import {
   Search,
   Plus,
@@ -78,6 +79,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
   const [splitPayments, setSplitPayments] = useState<{ method: PaymentMethod; amount: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { isConnected, blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
 
   const { subtotal, tax, total } = calculateCartTotals(cart, discount, taxRate);
 
@@ -99,7 +101,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
   }, [refreshHeld]);
 
   const handleCompleteSale = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || blockIfOffline("Completing a sale")) return;
     setLoading(true);
 
     try {
@@ -134,7 +136,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
   };
 
   const handleHold = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || blockIfOffline("Holding a sale")) return;
     setLoading(true);
     try {
       await holdSale({
@@ -174,37 +176,42 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
 
   return (
     <div>
-      <PageHeader title="Point of Sale" description="Process sales quickly and efficiently">
+      <PageHeader title="Point of Sale" description="Touch-friendly sales terminal">
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => { refreshHeld(); setHeldOpen(true); }}>
-            <Play className="h-4 w-4 mr-1" /> Resume ({heldSales.length})
+          <Button variant="outline" className="h-11 px-4 touch-target" onClick={() => { refreshHeld(); setHeldOpen(true); }} disabled={offlineDisabled}>
+            <Play className="h-5 w-5 mr-1" /> Resume ({heldSales.length})
           </Button>
-          <Button variant="outline" size="sm" onClick={handleHold} disabled={cart.length === 0 || loading}>
-            <Pause className="h-4 w-4 mr-1" /> Hold
+          <Button variant="outline" className="h-11 px-4 touch-target" onClick={handleHold} disabled={cart.length === 0 || loading || offlineDisabled}>
+            <Pause className="h-5 w-5 mr-1" /> Hold
           </Button>
-          <Button variant="outline" size="sm" onClick={clearCart} disabled={cart.length === 0}>
-            <X className="h-4 w-4 mr-1" /> Cancel
+          <Button variant="outline" className="h-11 px-4 touch-target" onClick={clearCart} disabled={cart.length === 0}>
+            <X className="h-5 w-5 mr-1" /> Cancel
           </Button>
         </div>
       </PageHeader>
 
-      <div className="grid lg:grid-cols-3 gap-4 h-[calc(100vh-180px)]">
-        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search products..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+      {!isConnected && (
+        <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          Sales are disabled — waiting for server connection.
+        </div>
+      )}
+
+      <div className="flex flex-col xl:grid xl:grid-cols-3 gap-4 min-h-0 xl:h-[calc(100vh-200px)]">
+        <div className="xl:col-span-2 flex flex-col gap-4 min-h-0 order-1">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <Input
+              placeholder="Search products..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-12 h-12 text-base"
+            />
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <Button
-              size="sm"
+              size="lg"
+              className="h-11 shrink-0 touch-target"
               variant={selectedCategory === "all" ? "default" : "outline"}
               onClick={() => setSelectedCategory("all")}
             >
@@ -213,7 +220,8 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
             {categories.map((cat) => (
               <Button
                 key={cat.id}
-                size="sm"
+                size="lg"
+                className="h-11 shrink-0 touch-target"
                 variant={selectedCategory === cat.id ? "default" : "outline"}
                 onClick={() => setSelectedCategory(cat.id)}
               >
@@ -222,7 +230,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto flex-1 pb-2">
+          <div className="tablet-pos-grid overflow-y-auto flex-1 pb-2 max-h-[45vh] xl:max-h-none">
             {filteredProducts.map((product) => (
               <button
                 key={product.id}
@@ -234,20 +242,20 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
                     stock: product.stock,
                   })
                 }
-                className="flex flex-col items-start p-4 rounded-xl border bg-card hover:border-gold/50 hover:shadow-md transition-all text-left"
+                className="flex flex-col items-start p-4 md:p-5 rounded-xl border bg-card hover:border-gold/50 hover:shadow-md active:scale-[0.98] transition-all text-left min-h-[100px] touch-target"
               >
-                <p className="font-medium text-sm line-clamp-2">{product.name}</p>
-                <p className="text-xs text-muted-foreground mt-1">{product.category.name}</p>
-                <div className="flex items-center justify-between w-full mt-2">
-                  <span className="font-bold text-gold">{formatCurrency(product.sellingPrice)}</span>
-                  <Badge variant="secondary" className="text-xs">{product.stock}</Badge>
+                <p className="font-semibold text-base line-clamp-2">{product.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">{product.category.name}</p>
+                <div className="flex items-center justify-between w-full mt-auto pt-3">
+                  <span className="font-bold text-lg text-gold">{formatCurrency(product.sellingPrice)}</span>
+                  <Badge variant="secondary">{product.stock}</Badge>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
-        <Card className="flex flex-col min-h-0">
+        <Card className="flex flex-col min-h-0 order-2 xl:order-none sticky bottom-0 xl:static z-10 shadow-lg xl:shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg font-serif flex items-center justify-between">
               Cart
@@ -260,24 +268,24 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
                 <p className="text-muted-foreground text-sm text-center py-8">Cart is empty</p>
               ) : (
                 cart.map((item) => (
-                  <div key={item.productId} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                  <div key={item.productId} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice)}</p>
+                      <p className="text-base font-medium truncate">{item.name}</p>
+                      <p className="text-sm text-muted-foreground">{formatCurrency(item.unitPrice)}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
-                        <Minus className="h-3 w-3" />
+                      <Button size="icon" variant="outline" className="h-11 w-11 touch-target" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
+                        <Minus className="h-4 w-4" />
                       </Button>
-                      <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
-                        <Plus className="h-3 w-3" />
+                      <span className="w-8 text-center text-lg font-bold">{item.quantity}</span>
+                      <Button size="icon" variant="outline" className="h-11 w-11 touch-target" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
+                        <Plus className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeItem(item.productId)}>
-                        <Trash2 className="h-3 w-3" />
+                      <Button size="icon" variant="ghost" className="h-11 w-11 text-destructive touch-target" onClick={() => removeItem(item.productId)}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    <span className="text-sm font-medium w-16 text-right">{formatCurrency(item.unitPrice * item.quantity)}</span>
+                    <span className="text-base font-semibold w-20 text-right">{formatCurrency(item.unitPrice * item.quantity)}</span>
                   </div>
                 ))
               )}
@@ -293,7 +301,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
                   min={0}
                   value={discount || ""}
                   onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                  className="h-8"
+                  className="h-11 text-base"
                   placeholder="0"
                 />
               </div>
@@ -313,10 +321,13 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
 
             <Button
               variant="gold"
-              className="w-full"
+              className="w-full h-14 text-lg touch-target"
               size="lg"
-              disabled={cart.length === 0}
-              onClick={() => setPaymentOpen(true)}
+              disabled={cart.length === 0 || offlineDisabled}
+              onClick={() => {
+                if (blockIfOffline("Payment")) return;
+                setPaymentOpen(true);
+              }}
             >
               <CreditCard className="h-4 w-4 mr-2" />
               Pay {formatCurrency(total)}
@@ -326,11 +337,11 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
       </div>
 
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-serif">Payment — {formatCurrency(total)}</DialogTitle>
+            <DialogTitle className="font-serif text-xl">Payment — {formatCurrency(total)}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { method: "CASH" as PaymentMethod, icon: Banknote, label: "Cash" },
               { method: "MPESA" as PaymentMethod, icon: Smartphone, label: "M-Pesa" },
@@ -341,10 +352,10 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
               <Button
                 key={method}
                 variant={paymentMethod === method ? "default" : "outline"}
-                className="h-16 flex-col gap-1"
+                className="h-20 flex-col gap-2 text-base touch-target"
                 onClick={() => setPaymentMethod(method)}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-6 w-6" />
                 {label}
               </Button>
             ))}
@@ -371,7 +382,7 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
             </div>
           )}
 
-          <Button variant="gold" className="w-full mt-4" onClick={handleCompleteSale} disabled={loading}>
+          <Button variant="gold" className="w-full mt-4 h-14 text-base touch-target" onClick={handleCompleteSale} disabled={loading || offlineDisabled}>
             Complete Sale
           </Button>
         </DialogContent>
@@ -401,15 +412,15 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
       </Dialog>
 
       <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-serif">Receipt</DialogTitle>
+            <DialogTitle className="font-serif text-xl">Receipt</DialogTitle>
           </DialogHeader>
           {completedOrder && settings && (
             <>
               <Receipt order={completedOrder} settings={settings} />
-              <Button variant="gold" className="w-full" onClick={printReceipt}>
-                <Printer className="h-4 w-4 mr-2" /> Print Receipt
+              <Button variant="gold" className="w-full h-14 text-base touch-target" onClick={printReceipt}>
+                <Printer className="h-5 w-5 mr-2" /> Print Receipt
               </Button>
             </>
           )}
