@@ -1,0 +1,350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+  RESTAURANT
+  BAR
+  ROOM_MANAGER
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InventoryType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  WASTAGE
+  SALE
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum OrderType {
+  POS
+  RESTAURANT
+  BAR
+  ROOM_SERVICE
+}
+
+enum PaymentMethod {
+  CASH
+  MPESA
+  CARD
+  BANK
+  SPLIT
+  ROOM_CHARGE
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  MAINTENANCE
+}
+
+enum BookingStatus {
+  RESERVED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum RoomChargeType {
+  FOOD
+  DRINKS
+  ALCOHOL
+  LAUNDRY
+  EXTRA_SERVICE
+  ACCOMMODATION
+}
+
+enum ExpenseCategory {
+  FUEL
+  ELECTRICITY
+  WATER
+  STAFF
+  MAINTENANCE
+  PURCHASES
+  OTHER
+}
+
+enum PurchaseStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(CASHIER)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders        Order[]
+  payments      Payment[]
+  activityLogs  ActivityLog[]
+  inventoryMovements InventoryMovement[]
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  type        String    @default("GENERAL")
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  name            String
+  sku             String        @unique
+  barcode         String?
+  sellingPrice    Float
+  costPrice       Float         @default(0)
+  stock           Int           @default(0)
+  lowStockAlert   Int           @default(5)
+  status          ProductStatus @default(ACTIVE)
+  categoryId      String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  category          Category            @relation(fields: [categoryId], references: [id])
+  orderItems        OrderItem[]
+  inventoryMovements InventoryMovement[]
+  purchaseItems     PurchaseItem[]
+  roomCharges       RoomCharge[]
+}
+
+model InventoryMovement {
+  id          String        @id @default(cuid())
+  productId   String
+  type        InventoryType
+  quantity    Int
+  reason      String?
+  reference   String?
+  userId      String?
+  createdAt   DateTime      @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  type          OrderType   @default(POS)
+  status        OrderStatus @default(PENDING)
+  subtotal      Float       @default(0)
+  discount      Float       @default(0)
+  tax           Float       @default(0)
+  total         Float       @default(0)
+  notes         String?
+  tableNumber   String?
+  roomId        String?
+  bookingId     String?
+  userId        String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  completedAt   DateTime?
+
+  user     User        @relation(fields: [userId], references: [id])
+  room     Room?       @relation(fields: [roomId], references: [id])
+  booking  Booking?    @relation(fields: [bookingId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Float
+  total     Float
+  notes     String?
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  orderId   String
+  method    PaymentMethod
+  amount    Float
+  reference String?
+  userId    String
+  createdAt DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model Room {
+  id           String     @id @default(cuid())
+  number       String     @unique
+  type         String
+  pricePerNight Float
+  capacity     Int        @default(2)
+  description  String?
+  status       RoomStatus @default(AVAILABLE)
+  floor        Int        @default(1)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  bookings    Booking[]
+  orders      Order[]
+  roomCharges RoomCharge[]
+}
+
+model Guest {
+  id         String   @id @default(cuid())
+  fullName   String
+  phone      String
+  email      String?
+  nationalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id         String        @id @default(cuid())
+  guestId    String
+  roomId     String
+  checkIn    DateTime
+  checkOut   DateTime
+  adults     Int           @default(1)
+  children   Int           @default(0)
+  status     BookingStatus @default(RESERVED)
+  totalAmount Float        @default(0)
+  notes      String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  guest       Guest        @relation(fields: [guestId], references: [id])
+  room        Room         @relation(fields: [roomId], references: [id])
+  orders      Order[]
+  roomCharges RoomCharge[]
+}
+
+model RoomCharge {
+  id          String         @id @default(cuid())
+  bookingId   String
+  roomId      String
+  productId   String?
+  type        RoomChargeType
+  description String
+  quantity    Int            @default(1)
+  unitPrice   Float
+  total       Float
+  createdAt   DateTime       @default(now())
+
+  booking Booking  @relation(fields: [bookingId], references: [id])
+  room    Room     @relation(fields: [roomId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory
+  description String
+  amount      Float
+  date        DateTime        @default(now())
+  reference   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+}
+
+model Purchase {
+  id          String         @id @default(cuid())
+  supplierId  String
+  purchaseNumber String      @unique
+  status      PurchaseStatus @default(PENDING)
+  totalAmount Float          @default(0)
+  notes       String?
+  receivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  items    PurchaseItem[]
+}
+
+model PurchaseItem {
+  id         String @id @default(cuid())
+  purchaseId String
+  productId  String
+  quantity   Int
+  unitCost   Float
+  total      Float
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model Settings {
+  id            String @id @default("default")
+  businessName  String @default("RAGEN RESORT")
+  businessAddress String @default("")
+  phone         String @default("")
+  email         String @default("")
+  receiptFooter String @default("Thank you for choosing RAGEN RESORT!")
+  taxRate       Float  @default(16)
+  currency      String @default("KES")
+  updatedAt     DateTime @updatedAt
+}

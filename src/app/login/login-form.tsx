@@ -1,0 +1,128 @@
+"use client";
+
+import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
+
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+
+export default function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "admin@ragenresort.com", password: "admin123" },
+  });
+
+  if (showSplash) {
+    return (
+      <div
+        className="fixed inset-0 flex flex-col items-center justify-center bg-emerald-950 cursor-pointer"
+        onClick={() => setShowSplash(false)}
+      >
+        <div className="animate-pulse">
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gold text-emerald-950 font-serif font-bold text-5xl mb-6 shadow-2xl shadow-gold/20">
+            R
+          </div>
+          <h1 className="font-serif text-4xl font-bold text-gold text-center mb-2">RAGEN RESORT</h1>
+          <p className="text-emerald-300/70 text-center text-lg">Point of Sale System</p>
+          <p className="text-emerald-400/50 text-center text-sm mt-8 animate-bounce">Tap to continue</p>
+        </div>
+      </div>
+    );
+  }
+
+  const onSubmit = async (data: LoginFormData) => {
+    setLoading(true);
+    setError("");
+
+    const result = await signIn("credentials", {
+      email: data.email,
+      password: data.password,
+      redirect: false,
+    });
+
+    setLoading(false);
+
+    if (result?.error) {
+      setError("Invalid email or password");
+      return;
+    }
+
+    router.push(callbackUrl);
+    router.refresh();
+  };
+
+  return (
+    <div className="min-h-screen flex">
+      <div className="hidden lg:flex lg:w-1/2 bg-emerald-950 items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-900/50 to-emerald-950" />
+        <div className="relative z-10 text-center px-12">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gold text-emerald-950 font-serif font-bold text-4xl mx-auto mb-8 shadow-xl shadow-gold/20">
+            R
+          </div>
+          <h1 className="font-serif text-5xl font-bold text-gold mb-4">RAGEN RESORT</h1>
+          <p className="text-emerald-200/80 text-xl mb-2">Premium Resort Management</p>
+          <p className="text-emerald-400/60">Accommodation • Restaurant • Bar • POS</p>
+        </div>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center p-8 bg-background">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center lg:text-left">
+            <div className="lg:hidden flex h-14 w-14 items-center justify-center rounded-full bg-gold text-emerald-950 font-serif font-bold text-2xl mx-auto mb-4">
+              R
+            </div>
+            <h2 className="text-2xl font-serif font-bold">Welcome Back</h2>
+            <p className="text-muted-foreground mt-1">Sign in to your account</p>
+          </div>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" placeholder="admin@ragenresort.com" {...register("email")} />
+              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
+              {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
+            </div>
+
+            {error && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" variant="gold" disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In"}
+            </Button>
+          </form>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Demo: admin@ragenresort.com / admin123
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
