@@ -9,6 +9,9 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cancelOrder, deleteOrder } from "@/lib/actions/products";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/app-error";
+import { PaymentBreakdown } from "@/components/payments/payment-breakdown";
+import { isSplitOrder } from "@/lib/payments";
+import { PaymentMethod } from "@prisma/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRequireConnection } from "@/hooks/use-require-connection";
 import { useRouter } from "next/navigation";
@@ -25,7 +28,13 @@ interface OrdersClientProps {
     createdAt: Date;
     user: { name: string };
     items: Array<{ quantity: number; product: { name: string } }>;
-    payments: Array<{ id: string; method: string; amount: number }>;
+    changeGiven?: number;
+    payments: Array<{
+      id: string;
+      method: string;
+      amount: number;
+      reference?: string | null;
+    }>;
   }>;
 }
 
@@ -73,11 +82,15 @@ export function OrdersClient({ orders }: OrdersClientProps) {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="text-right">
+                    <div className="text-right min-w-[140px]">
                       <p className="text-lg font-bold text-gold">{formatCurrency(order.total)}</p>
-                      {order.payments.map((p) => (
-                        <p key={p.id} className="text-xs text-muted-foreground">{p.method}: {formatCurrency(p.amount)}</p>
-                      ))}
+                      {isSplitOrder(
+                        order.payments.map((p) => ({ method: p.method as PaymentMethod }))
+                      ) && (
+                        <Badge variant="outline" className="text-[10px] mb-1">
+                          Split
+                        </Badge>
+                      )}
                     </div>
                     {canCancel(order.status) && order.status !== "CANCELLED" && (
                       <Button size="sm" variant="outline" disabled={offlineDisabled} onClick={() => setConfirm({ action: "cancel", id: order.id })}>
@@ -91,6 +104,17 @@ export function OrdersClient({ orders }: OrdersClientProps) {
                     )}
                   </div>
                 </div>
+                {order.status === "COMPLETED" && order.payments.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Payment</p>
+                    <PaymentBreakdown
+                      orderTotal={order.total}
+                      changeGiven={order.changeGiven ?? 0}
+                      payments={order.payments}
+                      compact
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))

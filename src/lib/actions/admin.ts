@@ -7,6 +7,8 @@ import { generatePurchaseNumber } from "@/lib/utils";
 import { ExpenseCategory, PurchaseStatus } from "@prisma/client";
 import { getDateRange } from "@/lib/utils";
 import { AppError } from "@/lib/app-error";
+import { aggregatePaymentTotals } from "@/lib/payments";
+import { PaymentMethod } from "@prisma/client";
 
 export async function getExpenses(filter = "month") {
   const { start, end } = getDateRange(filter === "today" ? "today" : filter === "week" ? "week" : "month");
@@ -263,6 +265,24 @@ export async function deletePurchase(id: string) {
   revalidatePath("/inventory");
 }
 
+export async function getPaymentSummary(filter: string, startDate?: Date, endDate?: Date) {
+  const orders = await getSalesReport(filter, startDate, endDate);
+  const totals = aggregatePaymentTotals(orders);
+  const splitOrderCount = orders.filter(
+    (o) =>
+      o.payments.length > 1 ||
+      o.payments.some((p) => p.method === PaymentMethod.SPLIT)
+  ).length;
+  const salesTotal = orders.reduce((s, o) => s + o.total, 0);
+
+  return {
+    ...totals,
+    salesTotal,
+    orderCount: orders.length,
+    splitOrderCount,
+  };
+}
+
 export async function getSalesReport(filter: string, startDate?: Date, endDate?: Date) {
   let start: Date;
   let end: Date;
@@ -320,24 +340,106 @@ export async function getProfitReport(filter: string) {
 export async function getCashierPerformance(filter: string) {
   const { start, end } = getDateRange(filter);
 
-  const orders = await prisma.order.findMany({
-    where: { createdAt: { gte: start, lte: end }, status: "COMPLETED" },
-    include: { user: { select: { id: true, name: true } } },
-  });
+  const [orders, cancelled] = await Promise.all([
+    prisma.order.findMany({
+      where: { createdAt: { gte: start, lte: end }, status: "COMPLETED" },
+      include: {
+        user: { select: { id: true, name: true } },
+        payments: true,
+      },
+    }),
+    prisma.order.findMany({
+      where: {
+        createdAt: { gte: start, lte: end },
+        status: "CANCELLED",
+      },
+      select: { userId: true },
+    }),
+  ]);
 
-  const cashierMap = new Map<string, { name: string; orders: number; revenue: number }>();
+  const cancelCountByUser = new Map<string, number>();
+  for (const o of cancelled) {
+    cancelCountByUser.set(o.userId, (cancelCountByUser.get(o.userId) ?? 0) + 1);
+  }
+
+  const cashierMap = new Map<
+    string,
+    {
+      name: string;
+      orders: number;
+      revenue: number;
+      cash: number;
+      mpesa: number;
+      card: number;
+      bank: number;
+      cancellations: number;
+    }
+  >();
+
   for (const order of orders) {
     const existing = cashierMap.get(order.userId) || {
       name: order.user.name,
       orders: 0,
       revenue: 0,
+      cash: 0,
+      mpesa: 0,
+      card: 0,
+      bank: 0,
+      cancellations: cancelCountByUser.get(order.userId) ?? 0,
     };
     existing.orders += 1;
     existing.revenue += order.total;
+    for (const p of order.payments) {
+      switch (p.method) {
+        case "CASH":
+          existing.cash += p.amount;
+          break;
+        case "MPESA":
+          existing.mpesa += p.amount;
+          break;
+        case "CARD":
+          existing.card += p.amount;
+          break;
+        case "BANK":
+          existing.bank += p.amount;
+          break;
+        default:
+          break;
+      }
+    }
     cashierMap.set(order.userId, existing);
   }
 
-  return Array.from(cashierMap.values()).sort((a, b) => b.revenue - a.revenue);
+  for (const [userId, count] of cancelCountByUser) {
+    if (!cashierMap.has(userId)) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+      if (user) {
+        cashierMap.set(userId, {
+          name: user.name,
+          orders: 0,
+          revenue: 0,
+          cash: 0,
+          mpesa: 0,
+          card: 0,
+          bank: 0,
+          cancellations: count,
+        });
+      }
+    }
+  }
+
+  return Array.from(cashierMap.values())
+    .map((c) => ({
+      ...c,
+      cash: Math.round(c.cash * 100) / 100,
+      mpesa: Math.round(c.mpesa * 100) / 100,
+      card: Math.round(c.card * 100) / 100,
+      bank: Math.round(c.bank * 100) / 100,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
 }
 
 export async function getInventoryReport() {

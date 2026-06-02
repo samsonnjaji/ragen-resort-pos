@@ -14,6 +14,9 @@ import {
   Wine,
   ShoppingBag,
   AlertTriangle,
+  Banknote,
+  Smartphone,
+  CreditCard,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +40,12 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatCard title="Today's Revenue" value={stats.todayRevenue} icon={DollarSign} variant="gold" />
+        <StatCard title="Today Cash" value={stats.todayCash} icon={Banknote} variant="emerald" />
+        <StatCard title="Today M-Pesa" value={stats.todayMpesa} icon={Smartphone} />
+        <StatCard title="Today Card/Bank" value={stats.todayCardBank} icon={CreditCard} />
+      </div>
+
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         <StatCard title="Room Revenue" value={stats.roomRevenue} icon={BedDouble} variant="emerald" />
         <StatCard title="Food Revenue" value={stats.foodRevenue} icon={UtensilsCrossed} />
         <StatCard title="Bar Revenue" value={stats.barRevenue} icon={Wine} />

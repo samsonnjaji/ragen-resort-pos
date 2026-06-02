@@ -8,11 +8,15 @@ import {
   InventoryType,
   OrderStatus,
   OrderType,
-  PaymentMethod,
   ProductStatus,
 } from "@prisma/client";
 import { AppError, rethrowPrisma } from "@/lib/app-error";
 import { archiveProduct } from "./archive";
+import {
+  formatPaymentBreakdownForLog,
+  type PaymentLineInput,
+  validateAndNormalizePayments,
+} from "@/lib/payments";
 
 async function validateProductInput(
   data: {
@@ -260,17 +264,22 @@ export async function completeSale(data: {
   items: { productId: string; quantity: number; unitPrice: number }[];
   discount: number;
   tax: number;
-  payments: { method: PaymentMethod; amount: number; reference?: string }[];
+  payments: PaymentLineInput[];
   type?: OrderType;
   notes?: string;
   roomId?: string;
   bookingId?: string;
 }) {
   const session = await getSession();
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+
+  if (!data.items.length) throw new AppError("Cart is empty.");
 
   const subtotal = data.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const total = subtotal - data.discount + data.tax;
+
+  const { payments: normalizedPayments, changeGiven, isSplit } =
+    validateAndNormalizePayments(data.payments, total);
 
   const order = await prisma.$transaction(async (tx) => {
     const newOrder = await tx.order.create({
@@ -282,6 +291,7 @@ export async function completeSale(data: {
         discount: data.discount,
         tax: data.tax,
         total,
+        changeGiven,
         notes: data.notes,
         roomId: data.roomId,
         bookingId: data.bookingId,
@@ -296,7 +306,7 @@ export async function completeSale(data: {
           })),
         },
         payments: {
-          create: data.payments.map((p) => ({
+          create: normalizedPayments.map((p) => ({
             method: p.method,
             amount: p.amount,
             reference: p.reference,
@@ -332,10 +342,35 @@ export async function completeSale(data: {
     return newOrder;
   });
 
-  await logActivity("CREATE", "Order", order.id, order.orderNumber);
+  const breakdown = formatPaymentBreakdownForLog(order.payments, changeGiven);
+
+  await logActivity("SALE_COMPLETED", "Order", order.id, order.orderNumber, {
+    total,
+    changeGiven,
+    isSplit,
+    cashier: session.user.name ?? session.user.email,
+    payments: breakdown,
+  });
+
+  for (const p of order.payments) {
+    await logActivity(
+      isSplit ? "SPLIT_PAYMENT_RECORDED" : "PAYMENT_RECORDED",
+      "Payment",
+      p.id,
+      `${order.orderNumber} — ${p.method} ${p.amount}`,
+      {
+        orderNumber: order.orderNumber,
+        method: p.method,
+        amount: p.amount,
+        reference: p.reference,
+      }
+    );
+  }
+
   revalidatePath("/pos");
   revalidatePath("/dashboard");
   revalidatePath("/orders");
+  revalidatePath("/reports");
   return order;
 }
 

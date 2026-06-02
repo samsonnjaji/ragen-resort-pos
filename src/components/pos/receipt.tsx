@@ -1,6 +1,12 @@
 "use client";
 
 import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  getPaymentMethodLabel,
+  getTotalPaid,
+  isSplitOrder,
+} from "@/lib/payments";
+import { PaymentMethod } from "@prisma/client";
 
 interface ReceiptProps {
   order: {
@@ -10,7 +16,8 @@ interface ReceiptProps {
     discount: number;
     tax: number;
     total: number;
-    payments: { method: string; amount: number }[];
+    changeGiven?: number;
+    payments: { method: string; amount: number; reference?: string | null }[];
     user: { name: string };
     createdAt: Date | string;
   };
@@ -25,6 +32,17 @@ interface ReceiptProps {
 }
 
 export function Receipt({ order, settings }: ReceiptProps) {
+  const changeGiven = order.changeGiven ?? 0;
+  const payments = order.payments;
+  const totalPaid = getTotalPaid(
+    payments.map((p) => ({ method: p.method as PaymentMethod, amount: p.amount }))
+  );
+  const split = isSplitOrder(
+    payments.map((p) => ({ method: p.method as PaymentMethod }))
+  );
+  const single =
+    payments.length === 1 && !split && payments[0].method !== "SPLIT";
+
   return (
     <div id="receipt" className="receipt-thermal mx-auto p-3 md:p-4">
       <div className="text-center mb-3">
@@ -80,12 +98,48 @@ export function Receipt({ order, settings }: ReceiptProps) {
       </div>
 
       <div className="mt-2 pt-2 border-t border-dashed border-gray-500 text-[10px]">
-        {order.payments.map((p, i) => (
-          <div key={i} className="flex justify-between">
-            <span>{p.method}</span>
-            <span>{formatCurrency(p.amount, settings.currency)}</span>
-          </div>
-        ))}
+        <p className="font-bold mb-1">Payment Summary</p>
+        {single ? (
+          <>
+            <div className="flex justify-between">
+              <span>Payment Method</span>
+              <span>{getPaymentMethodLabel(payments[0].method)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Amount Paid</span>
+              <span>{formatCurrency(payments[0].amount, settings.currency)}</span>
+            </div>
+            {payments[0].reference && (
+              <p>
+                {getPaymentMethodLabel(payments[0].method)} Ref: {payments[0].reference}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {payments.map((p, i) => (
+              <div key={i}>
+                <div className="flex justify-between">
+                  <span>{getPaymentMethodLabel(p.method)}</span>
+                  <span>{formatCurrency(p.amount, settings.currency)}</span>
+                </div>
+                {p.reference && (
+                  <p className="text-[9px] pl-1">
+                    {getPaymentMethodLabel(p.method)} Ref: {p.reference}
+                  </p>
+                )}
+              </div>
+            ))}
+            <div className="flex justify-between font-semibold border-t border-gray-400 mt-1 pt-1">
+              <span>Total Paid</span>
+              <span>{formatCurrency(totalPaid, settings.currency)}</span>
+            </div>
+          </>
+        )}
+        <div className="flex justify-between mt-1">
+          <span>Change</span>
+          <span>{formatCurrency(changeGiven, settings.currency)}</span>
+        </div>
       </div>
 
       <p className="text-center mt-3 text-[10px] italic">{settings.receiptFooter}</p>

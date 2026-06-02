@@ -25,8 +25,10 @@ import { formatCurrency } from "@/lib/utils";
 import { completeSale, holdSale, getHeldSales, cancelOrder } from "@/lib/actions/products";
 import { getSettings } from "@/lib/actions/dashboard";
 import { Receipt, printReceipt } from "@/components/pos/receipt";
+import { PaymentDialog, type PaymentLineDraft } from "@/components/pos/payment-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useRequireConnection } from "@/hooks/use-require-connection";
+import { getErrorMessage } from "@/lib/app-error";
 import {
   Search,
   Plus,
@@ -36,13 +38,8 @@ import {
   Play,
   X,
   CreditCard,
-  Banknote,
-  Smartphone,
-  Building2,
-  Split,
   Printer,
 } from "lucide-react";
-import { PaymentMethod } from "@prisma/client";
 
 interface Product {
   id: string;
@@ -75,8 +72,6 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
   const [heldSales, setHeldSales] = useState<Awaited<ReturnType<typeof getHeldSales>>>([]);
   const [completedOrder, setCompletedOrder] = useState<Awaited<ReturnType<typeof completeSale>> | null>(null);
   const [settings, setSettings] = useState<Awaited<ReturnType<typeof getSettings>> | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
-  const [splitPayments, setSplitPayments] = useState<{ method: PaymentMethod; amount: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { isConnected, blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
@@ -100,16 +95,11 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
     refreshHeld();
   }, [refreshHeld]);
 
-  const handleCompleteSale = async () => {
+  const handleCompleteSale = async (payments: PaymentLineDraft[]) => {
     if (cart.length === 0 || blockIfOffline("Completing a sale")) return;
     setLoading(true);
 
     try {
-      const payments =
-        paymentMethod === "SPLIT"
-          ? splitPayments
-          : [{ method: paymentMethod, amount: total }];
-
       const order = await completeSale({
         items: cart.map((c) => ({
           productId: c.productId,
@@ -128,8 +118,12 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
       setPaymentOpen(false);
       setReceiptOpen(true);
       toast({ title: "Sale completed", description: `Order ${order.orderNumber}` });
-    } catch {
-      toast({ title: "Error", description: "Failed to complete sale", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: getErrorMessage(err, "Failed to complete sale"),
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -341,57 +335,14 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
         </Card>
       </div>
 
-      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Payment — {formatCurrency(total)}</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { method: "CASH" as PaymentMethod, icon: Banknote, label: "Cash" },
-              { method: "MPESA" as PaymentMethod, icon: Smartphone, label: "M-Pesa" },
-              { method: "CARD" as PaymentMethod, icon: CreditCard, label: "Card" },
-              { method: "BANK" as PaymentMethod, icon: Building2, label: "Bank" },
-              { method: "SPLIT" as PaymentMethod, icon: Split, label: "Split" },
-            ].map(({ method, icon: Icon, label }) => (
-              <Button
-                key={method}
-                variant={paymentMethod === method ? "default" : "outline"}
-                className="h-20 flex-col gap-2 text-base touch-target"
-                onClick={() => setPaymentMethod(method)}
-              >
-                <Icon className="h-6 w-6" />
-                {label}
-              </Button>
-            ))}
-          </div>
-
-          {paymentMethod === "SPLIT" && (
-            <div className="space-y-2 mt-2">
-              {(["CASH", "MPESA", "CARD", "BANK"] as PaymentMethod[]).map((m) => (
-                <div key={m} className="flex items-center gap-2">
-                  <span className="text-sm w-16">{m}</span>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    onChange={(e) => {
-                      const amount = Number(e.target.value) || 0;
-                      setSplitPayments((prev) => {
-                        const filtered = prev.filter((p) => p.method !== m);
-                        return amount > 0 ? [...filtered, { method: m, amount }] : filtered;
-                      });
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Button variant="gold" className="w-full mt-4 h-14 text-base touch-target" onClick={handleCompleteSale} disabled={loading || offlineDisabled}>
-            Complete Sale
-          </Button>
-        </DialogContent>
-      </Dialog>
+      <PaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        orderTotal={total}
+        loading={loading}
+        disabled={offlineDisabled}
+        onComplete={handleCompleteSale}
+      />
 
       <Dialog open={heldOpen} onOpenChange={setHeldOpen}>
         <DialogContent>

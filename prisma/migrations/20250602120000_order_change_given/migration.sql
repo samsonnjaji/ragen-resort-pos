@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN "changeGiven" DOUBLE PRECISION NOT NULL DEFAULT 0;

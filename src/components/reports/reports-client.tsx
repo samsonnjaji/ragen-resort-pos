@@ -20,7 +20,9 @@ import {
   getCashierPerformance,
   getInventoryReport,
   getOccupancyReport,
+  getPaymentSummary,
 } from "@/lib/actions/admin";
+import { getPaymentMethodLabel } from "@/lib/payments";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
 import { Download, FileSpreadsheet, Package, BedDouble } from "lucide-react";
 import {
@@ -45,6 +47,7 @@ export function ReportsClient() {
   const [cashierData, setCashierData] = useState<Awaited<ReturnType<typeof getCashierPerformance>>>([]);
   const [inventoryData, setInventoryData] = useState<Awaited<ReturnType<typeof getInventoryReport>>>([]);
   const [occupancyData, setOccupancyData] = useState<Awaited<ReturnType<typeof getOccupancyReport>> | null>(null);
+  const [paymentSummary, setPaymentSummary] = useState<Awaited<ReturnType<typeof getPaymentSummary>> | null>(null);
   const [loading, setLoading] = useState(false);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -55,18 +58,20 @@ export function ReportsClient() {
       const start = filter === "custom" && customStart ? new Date(customStart) : undefined;
       const end = filter === "custom" && customEnd ? new Date(customEnd) : undefined;
 
-      const [sales, profit, cashiers, inventory, occupancy] = await Promise.all([
+      const [sales, profit, cashiers, inventory, occupancy, payments] = await Promise.all([
         getSalesReport(filter, start, end),
         getProfitReport(filter),
         getCashierPerformance(filter),
         getInventoryReport(),
         getOccupancyReport(filter),
+        getPaymentSummary(filter, start, end),
       ]);
       setSalesData(sales);
       setProfitData(profit);
       setCashierData(cashiers);
       setInventoryData(inventory);
       setOccupancyData(occupancy);
+      setPaymentSummary(payments);
     } finally {
       setLoading(false);
     }
@@ -117,6 +122,15 @@ export function ReportsClient() {
   };
 
   const totalRevenue = salesData.reduce((s, o) => s + o.total, 0);
+
+  const paymentMethodSales = paymentSummary
+    ? {
+        cash: paymentSummary.cash,
+        mpesa: paymentSummary.mpesa,
+        card: paymentSummary.card,
+        bank: paymentSummary.bank,
+      }
+    : null;
   const occupancyChart = occupancyData
     ? Object.entries(occupancyData.statusBreakdown).map(([name, value]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
@@ -149,12 +163,67 @@ export function ReportsClient() {
         </div>
       </PageHeader>
 
+      {paymentSummary && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="font-serif text-lg">Daily Payment Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+            <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg bg-emerald-500/10">
+              <span>{getPaymentMethodLabel("CASH")} Total</span>
+              <span className="font-bold">{formatCurrency(paymentSummary.cash)}</span>
+            </div>
+            <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg bg-amber-500/10">
+              <span>{getPaymentMethodLabel("MPESA")} Total</span>
+              <span className="font-bold">{formatCurrency(paymentSummary.mpesa)}</span>
+            </div>
+            <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg bg-blue-500/10">
+              <span>{getPaymentMethodLabel("CARD")} Total</span>
+              <span className="font-bold">{formatCurrency(paymentSummary.card)}</span>
+            </div>
+            <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg bg-slate-500/10">
+              <span>{getPaymentMethodLabel("BANK")} Total</span>
+              <span className="font-bold">{formatCurrency(paymentSummary.bank)}</span>
+            </div>
+            {paymentSummary.splitOrderCount > 0 && (
+              <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg border border-dashed">
+                <span>Split orders</span>
+                <span className="font-bold">{paymentSummary.splitOrderCount}</span>
+              </div>
+            )}
+            {paymentSummary.legacySplit > 0 && (
+              <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg border">
+                <span>Legacy split rows</span>
+                <span className="font-bold">{formatCurrency(paymentSummary.legacySplit)}</span>
+              </div>
+            )}
+            <div className="flex justify-between sm:flex-col sm:gap-1 p-2 rounded-lg bg-gold/10 sm:col-span-2 lg:col-span-3">
+              <span className="font-medium">Grand Total (payments)</span>
+              <span className="font-bold text-gold text-lg">{formatCurrency(paymentSummary.total)}</span>
+            </div>
+            <div className="flex justify-between sm:flex-col sm:gap-1 text-muted-foreground sm:col-span-2 lg:col-span-3 text-xs">
+              <span>Total sales (orders): {formatCurrency(paymentSummary.salesTotal)} • {paymentSummary.orderCount} orders</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {profitData && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
           <StatCard title="Revenue" value={profitData.revenue} icon={FileSpreadsheet} variant="gold" />
           <StatCard title="Cost of Goods" value={profitData.cost} icon={FileSpreadsheet} />
           <StatCard title="Expenses" value={profitData.expenses} icon={FileSpreadsheet} variant="danger" />
           <StatCard title="Net Profit" value={profitData.profit} icon={FileSpreadsheet} variant="emerald" />
+        </div>
+      )}
+
+      {paymentMethodSales && salesData.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
+          <StatCard title="Total Sales" value={totalRevenue} icon={FileSpreadsheet} variant="gold" />
+          <StatCard title="Cash Sales" value={paymentMethodSales.cash} icon={FileSpreadsheet} variant="emerald" />
+          <StatCard title="M-Pesa Sales" value={paymentMethodSales.mpesa} icon={FileSpreadsheet} />
+          <StatCard title="Card Sales" value={paymentMethodSales.card} icon={FileSpreadsheet} />
+          <StatCard title="Bank Sales" value={paymentMethodSales.bank} icon={FileSpreadsheet} />
         </div>
       )}
 
@@ -191,10 +260,19 @@ export function ReportsClient() {
               <div className="space-y-2">
                 {salesData.slice(0, 20).map((order) => (
                   <Card key={order.id}>
-                    <CardContent className="p-3 flex justify-between">
+                    <CardContent className="p-3 flex flex-col sm:flex-row sm:justify-between gap-2">
                       <div>
                         <span className="font-medium text-sm">{order.orderNumber}</span>
                         <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)} • {order.user.name}</p>
+                        {order.payments.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {order.payments.map((p) => (
+                              <Badge key={p.id} variant="outline" className="text-[10px]">
+                                {getPaymentMethodLabel(p.method)} {formatCurrency(p.amount)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <span className="font-bold text-gold">{formatCurrency(order.total)}</span>
                     </CardContent>
@@ -225,20 +303,44 @@ export function ReportsClient() {
           {cashierData.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
           ) : (
-            <Card>
-              <CardHeader><CardTitle className="font-serif">Cashier Performance</CardTitle></CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={cashierData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                    <Bar dataKey="revenue" fill="#D4AF37" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+            <>
+              <Card className="mb-4">
+                <CardHeader><CardTitle className="font-serif">Cashier Performance</CardTitle></CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={cashierData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                      <Bar dataKey="revenue" fill="#D4AF37" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+              <div className="space-y-2">
+                {cashierData.map((c) => (
+                  <Card key={c.name}>
+                    <CardContent className="p-4">
+                      <div className="flex flex-wrap justify-between gap-2 mb-2">
+                        <span className="font-medium">{c.name}</span>
+                        <span className="font-bold text-gold">{formatCurrency(c.revenue)}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                        <span>{getPaymentMethodLabel("CASH")}: {formatCurrency(c.cash)}</span>
+                        <span>{getPaymentMethodLabel("MPESA")}: {formatCurrency(c.mpesa)}</span>
+                        <span>{getPaymentMethodLabel("CARD")}: {formatCurrency(c.card)}</span>
+                        <span>{getPaymentMethodLabel("BANK")}: {formatCurrency(c.bank)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {c.orders} orders
+                        {c.cancellations > 0 && ` • ${c.cancellations} cancelled`}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </>
           )}
         </TabsContent>
 

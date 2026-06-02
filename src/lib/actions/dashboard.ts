@@ -83,7 +83,10 @@ export async function getDashboardStats() {
         createdAt: { gte: today, lt: tomorrow },
         status: "COMPLETED",
       },
-      include: { items: { include: { product: { include: { category: true } } } } },
+      include: {
+        items: { include: { product: { include: { category: true } } } },
+        payments: true,
+      },
     }),
     prisma.room.findMany(),
     prisma.product.findMany({
@@ -99,6 +102,29 @@ export async function getDashboardStats() {
 
   const todayRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
   const todayOrderCount = todayOrders.length;
+
+  let todayCash = 0;
+  let todayMpesa = 0;
+  let todayCardBank = 0;
+
+  for (const order of todayOrders) {
+    for (const p of order.payments) {
+      switch (p.method) {
+        case "CASH":
+          todayCash += p.amount;
+          break;
+        case "MPESA":
+          todayMpesa += p.amount;
+          break;
+        case "CARD":
+        case "BANK":
+          todayCardBank += p.amount;
+          break;
+        default:
+          break;
+      }
+    }
+  }
 
   let roomRevenue = 0;
   let foodRevenue = 0;
@@ -124,6 +150,9 @@ export async function getDashboardStats() {
 
   return {
     todayRevenue,
+    todayCash: Math.round(todayCash * 100) / 100,
+    todayMpesa: Math.round(todayMpesa * 100) / 100,
+    todayCardBank: Math.round(todayCardBank * 100) / 100,
     roomRevenue,
     foodRevenue,
     barRevenue,
