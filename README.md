@@ -59,8 +59,8 @@ This is the recommended setup for resort tablets. The app runs in the cloud — 
 | `DATABASE_URL` | Neon **pooled** PostgreSQL connection string |
 | `DIRECT_URL` | Neon **direct** connection string (for migrations) |
 | `NEXTAUTH_SECRET` | Random secret — run `openssl rand -base64 32` |
-| `NEXTAUTH_URL` | Your Vercel URL, e.g. `https://ragen-resort-pos.vercel.app` (no trailing slash) |
-| `APP_BASE_URL` | Same as `NEXTAUTH_URL` (used in password reset emails) |
+| `NEXTAUTH_URL` | `https://ragen-resort-pos.vercel.app` (no trailing slash) |
+| `APP_BASE_URL` | `https://ragen-resort-pos.vercel.app` — **required** for welcome/reset emails (never use Vercel preview URLs) |
 | `EMAIL_SERVER_HOST` | `smtp.gmail.com` |
 | `EMAIL_SERVER_PORT` | `587` |
 | `EMAIL_SERVER_USER` | Your Gmail address |
@@ -134,8 +134,8 @@ See `.env.example`:
 | `DATABASE_URL` | Neon PostgreSQL connection string (pooled for production) |
 | `DIRECT_URL` | Neon direct connection (required for `prisma migrate`) |
 | `NEXTAUTH_SECRET` | Secure random secret for session encryption |
-| `NEXTAUTH_URL` | Full deployment URL (no trailing slash) |
-| `APP_BASE_URL` | Public URL for password reset links (usually same as `NEXTAUTH_URL`) |
+| `NEXTAUTH_URL` | `https://ragen-resort-pos.vercel.app` (no trailing slash) |
+| `APP_BASE_URL` | `https://ragen-resort-pos.vercel.app` — public URL for all email links (login, password reset) |
 | `EMAIL_SERVER_HOST` | SMTP host (`smtp.gmail.com` for Gmail) |
 | `EMAIL_SERVER_PORT` | SMTP port (`587` for TLS) |
 | `EMAIL_SERVER_USER` | Gmail address |
@@ -176,6 +176,8 @@ Use `npx prisma db push` only for local/dev experiments — production should us
 6. **Permanent delete** is only in Archive, for deactivated users with **no** sales/payment/audit history.
 
 **Recommended production email:** `ragenresortpos@gmail.com` with a Google App Password — do not use a developer’s personal Gmail for client production.
+
+**Important:** Set `APP_BASE_URL` and `NEXTAUTH_URL` to `https://ragen-resort-pos.vercel.app` on Vercel. Do not rely on `VERCEL_URL` or team preview URLs (`daniels-projects-*.vercel.app`) — those require Vercel login and break email links.
 
 ### Password reset (test)
 

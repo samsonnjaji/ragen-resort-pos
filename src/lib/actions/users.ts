@@ -7,7 +7,7 @@ import { getSession, logActivity } from "./dashboard";
 import { revalidatePath } from "next/cache";
 import { AppError } from "@/lib/app-error";
 import { generateSecureTempPassword } from "@/lib/temp-password";
-import { sendWelcomeUserEmail, isEmailConfigured } from "@/lib/mail";
+import { sendWelcomeUserEmail, sendAdminTempPasswordEmail, isEmailConfigured } from "@/lib/mail";
 import { ROLE_LABELS } from "@/lib/utils";
 
 async function requireAdmin() {
@@ -16,14 +16,6 @@ async function requireAdmin() {
     throw new AppError("Unauthorized — admin access required.");
   }
   return session;
-}
-
-function getLoginUrl(): string {
-  const base =
-    process.env.APP_BASE_URL?.replace(/\/$/, "") ||
-    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
-    "http://localhost:3000";
-  return `${base}/login`;
 }
 
 export async function getUserDependencyCounts(userId: string) {
@@ -93,7 +85,6 @@ export async function createUserWithTempPassword(data: {
     const mailResult = await sendWelcomeUserEmail(user.email, {
       name: user.name,
       role: ROLE_LABELS[user.role] ?? user.role,
-      loginUrl: getLoginUrl(),
       temporaryPassword,
     });
     emailSent = mailResult.ok;
@@ -164,10 +155,9 @@ export async function resetUserTempPassword(userId: string) {
 
   let emailSent = false;
   if (isEmailConfigured()) {
-    const mailResult = await sendWelcomeUserEmail(user.email, {
+    const mailResult = await sendAdminTempPasswordEmail(user.email, {
       name: user.name,
       role: ROLE_LABELS[user.role] ?? user.role,
-      loginUrl: getLoginUrl(),
       temporaryPassword,
     });
     emailSent = mailResult.ok;

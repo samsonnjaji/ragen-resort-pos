@@ -19,14 +19,6 @@ function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
-function getAppBaseUrl(): string {
-  return (
-    process.env.APP_BASE_URL?.replace(/\/$/, "") ||
-    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
-    "http://localhost:3000"
-  );
-}
-
 function checkRateLimit(key: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
@@ -95,8 +87,7 @@ export async function requestPasswordReset(formData: { email: string }) {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    const resetUrl = `${getAppBaseUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`;
-    const mailResult = await sendPasswordResetEmail(user.email, resetUrl);
+    const mailResult = await sendPasswordResetEmail(user.email, rawToken);
 
     await logActivity("PASSWORD_RESET_REQUESTED", "User", user.id, user.email);
 
