@@ -45,6 +45,7 @@ import { logReportExported } from "@/lib/actions/admin";
 import { getPaymentMethodLabel } from "@/lib/payments";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
 import { buildCsv, downloadCsvFile, reportDateSuffix } from "@/lib/report-export";
+import { exportReportExcel, EXCEL_REPORT_IDS, type ReportExcelData } from "@/lib/report-excel-export";
 import { useToast } from "@/hooks/use-toast";
 import {
   Download,
@@ -411,29 +412,44 @@ export function ReportsClient({ settings }: ReportsClientProps) {
     }
   };
 
-  const exportSalesExcel = async () => {
-    const sales = data.sales;
-    if (!sales?.orders.length) {
-      toast({ title: "No sales data", description: "Generate a sales report with completed orders first.", variant: "destructive" });
+  const toExcelData = (): ReportExcelData => ({
+    sales: data.sales,
+    payment: data.payment ?? undefined,
+    cashier: data.cashier,
+    inventory: data.inventory,
+    occupancy: data.occupancy,
+    roomRevenue: data.roomRevenue,
+    profit: data.profit ?? undefined,
+    expenses: data.expenses,
+    productPerformance: data.productPerformance,
+  });
+
+  const exportExcelReport = async (reportId: ReportModuleId) => {
+    if (!EXCEL_REPORT_IDS.includes(reportId)) return;
+    if (!generatedAt) {
+      toast({ title: "Generate report first", description: "Click Generate before exporting Excel.", variant: "destructive" });
       return;
     }
     setExporting(true);
     try {
-      const XLSX = await import("xlsx");
-      const rows = sales.orders.map((o) => ({
-        "Order Number": o.orderNumber,
-        Date: formatDate(o.createdAt),
-        "Total (KES)": o.total,
-        Status: o.status,
-        Cashier: o.user.name,
-        Payments: o.payments?.map((p) => `${getPaymentMethodLabel(p.method)} ${p.amount}`).join("; ") ?? "",
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Sales");
-      XLSX.writeFile(wb, `sales-report-${dateSuffix}.xlsx`);
-      await logReportExported("sales-excel", filter, sales.orders.length);
-      toast({ title: "Export complete", description: `sales-report-${dateSuffix}.xlsx` });
+      const mod = REPORT_MODULES.find((m) => m.id === reportId);
+      const rowCount = await exportReportExcel(
+        reportId,
+        settings,
+        dateRangeLabel,
+        generatedAt,
+        generatedBy,
+        dateSuffix,
+        toExcelData()
+      );
+      await logReportExported(`${reportId}-excel`, filter, rowCount);
+      toast({
+        title: "Excel report exported",
+        description: `${mod?.title ?? reportId} — ${reportId}-report-${dateSuffix}.xlsx`,
+      });
+    } catch (error) {
+      console.error("[Reports Excel]", error);
+      toast({ title: "Excel export failed", description: "Could not create the workbook.", variant: "destructive" });
     } finally {
       setExporting(false);
     }
@@ -521,6 +537,10 @@ export function ReportsClient({ settings }: ReportsClientProps) {
         </div>
       </PageHeader>
 
+      <p className="no-print -mt-4 mb-6 text-xs text-muted-foreground">
+        CSV is raw data. Excel exports are formatted reports (Summary, Details, and Chart Data sheets).
+      </p>
+
       <div className="no-print mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {REPORT_MODULES.map((mod) => {
           const Icon = mod.icon;
@@ -569,17 +589,22 @@ export function ReportsClient({ settings }: ReportsClientProps) {
                     setActiveReport(mod.id);
                     handleExportFor(mod.id);
                   }}
+                  title="Plain CSV for import and analysis"
                 >
-                  <Download className="h-4 w-4 mr-1" /> CSV
+                  <Download className="h-4 w-4 mr-1" /> Export CSV Raw Data
                 </Button>
-                {mod.id === "sales" && (
+                {EXCEL_REPORT_IDS.includes(mod.id) && (
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!data.sales?.orders.length}
-                    onClick={exportSalesExcel}
+                    disabled={!generatedAt || activeReport !== mod.id || exporting}
+                    onClick={() => {
+                      setActiveReport(mod.id);
+                      exportExcelReport(mod.id);
+                    }}
+                    title="Formatted workbook with Summary, Details, and Chart Data"
                   >
-                    <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
+                    <FileSpreadsheet className="h-4 w-4 mr-1" /> Export Excel Report
                   </Button>
                 )}
               </CardContent>
@@ -597,12 +622,18 @@ export function ReportsClient({ settings }: ReportsClientProps) {
             <strong className="text-gold">{moduleMeta?.title}</strong>
             <span className="text-emerald-300/80 ml-2">• {dateRangeLabel}</span>
           </span>
-          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={handleExport}>
-            <Download className="h-4 w-4 mr-1" /> Export CSV
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={handleExport} title="Plain CSV for import and analysis">
+            <Download className="h-4 w-4 mr-1" /> Export CSV Raw Data
           </Button>
-          {activeReport === "sales" && (
-            <Button variant="outline" size="sm" disabled={!data.sales?.orders.length || exporting} onClick={exportSalesExcel}>
-              <FileSpreadsheet className="h-4 w-4 mr-1" /> Export Excel
+          {activeReport && EXCEL_REPORT_IDS.includes(activeReport) && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={exportDisabled}
+              onClick={() => exportExcelReport(activeReport!)}
+              title="Formatted workbook with Summary, Details, and Chart Data"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-1" /> Export Excel Report
             </Button>
           )}
           <Button variant="gold" size="sm" onClick={printReport}>
