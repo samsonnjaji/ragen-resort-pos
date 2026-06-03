@@ -341,7 +341,8 @@ export async function getProfitReport(filter: string, startDate?: Date, endDate?
 
   const revenue = orders.reduce((sum, o) => sum + o.total, 0);
   const cost = orders.reduce(
-    (sum, o) => sum + o.items.reduce((s, i) => s + i.quantity * i.product.costPrice, 0),
+    (sum, o) =>
+      sum + o.items.reduce((s, i) => s + i.quantity * (i.product?.costPrice ?? 0), 0),
     0
   );
   const expenseTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -465,7 +466,7 @@ export async function getInventoryReport() {
   return products.map((p) => ({
     name: p.name,
     sku: p.sku,
-    category: p.category.name,
+    category: p.category?.name ?? "Unknown",
     stock: p.stock,
     lowStockAlert: p.lowStockAlert,
     costValue: p.stock * p.costPrice,

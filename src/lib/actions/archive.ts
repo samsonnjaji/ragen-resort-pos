@@ -107,7 +107,19 @@ export async function getDeactivatedUsers() {
 
   return Promise.all(
     users.map(async (u) => {
-      const deps = await getUserDependencyCounts(u.id);
+      let deps = {
+        orders: 0,
+        payments: 0,
+        activityLogs: 0,
+        inventoryMovements: 0,
+        archivedProducts: 0,
+        total: 0,
+      };
+      try {
+        deps = await getUserDependencyCounts(u.id);
+      } catch {
+        // keep zero counts if dependency check fails
+      }
       return {
         id: u.id,
         name: u.name,
@@ -119,7 +131,6 @@ export async function getDeactivatedUsers() {
         archivedByEmail: u.archivedBy?.email ?? null,
         hasHistory: deps.total > 0,
         historyCount: deps.total,
-        history: deps,
       };
     })
   );

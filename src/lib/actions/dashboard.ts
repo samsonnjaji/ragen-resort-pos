@@ -135,7 +135,8 @@ export async function getDashboardStats() {
       roomRevenue += order.total;
     }
     for (const item of order.items) {
-      const catType = item.product.category.type;
+      const catType = item.product?.category?.type;
+      if (!catType) continue;
       if (catType === "FOOD" || catType === "ROOM_SERVICE") {
         foodRevenue += item.total;
       } else if (catType === "BAR" || catType === "ALCOHOL") {
@@ -206,7 +207,7 @@ export async function getSalesByCategory() {
 
   const categoryMap = new Map<string, number>();
   for (const item of items) {
-    const name = item.product.category.name;
+    const name = item.product?.category?.name ?? "Uncategorized";
     categoryMap.set(name, (categoryMap.get(name) || 0) + item.total);
   }
 
@@ -229,6 +230,7 @@ export async function getTopProducts() {
 
   const productMap = new Map<string, { name: string; quantity: number; revenue: number }>();
   for (const item of items) {
+    if (!item.product) continue;
     const existing = productMap.get(item.productId) || {
       name: item.product.name,
       quantity: 0,

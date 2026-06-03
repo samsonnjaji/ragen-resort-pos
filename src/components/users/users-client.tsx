@@ -40,9 +40,10 @@ interface UsersClientProps {
     mustChangePassword: boolean;
     createdAt: Date;
   }>;
+  loadError?: string;
 }
 
-export function UsersClient({ users }: UsersClientProps) {
+export function UsersClient({ users, loadError }: UsersClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<UsersClientProps["users"][0] | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
@@ -111,10 +112,18 @@ export function UsersClient({ users }: UsersClientProps) {
   return (
     <div>
       <PageHeader title="Users" description="Create staff accounts with secure temporary passwords">
+        {!loadError && (
         <Button variant="gold" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-1" /> Add User
         </Button>
+        )}
       </PageHeader>
+
+      {loadError && (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+          {loadError}
+        </div>
+      )}
 
       <div className="space-y-3">
         {users.length === 0 ? (

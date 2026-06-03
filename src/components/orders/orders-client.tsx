@@ -27,7 +27,7 @@ interface OrdersClientProps {
     total: number;
     createdAt: Date;
     user: { name: string };
-    items: Array<{ quantity: number; product: { name: string } }>;
+    items: Array<{ quantity: number; product?: { name: string } | null }>;
     changeGiven?: number;
     payments: Array<{
       id: string;
@@ -36,6 +36,7 @@ interface OrdersClientProps {
       reference?: string | null;
     }>;
   }>;
+  loadError?: string;
 }
 
 const statusVariant: Record<string, "default" | "secondary" | "success" | "warning" | "destructive"> = {
@@ -43,7 +44,7 @@ const statusVariant: Record<string, "default" | "secondary" | "success" | "warni
   SERVED: "success", CANCELLED: "destructive", ON_HOLD: "secondary",
 };
 
-export function OrdersClient({ orders }: OrdersClientProps) {
+export function OrdersClient({ orders, loadError }: OrdersClientProps) {
   const [confirm, setConfirm] = useState<{ action: "cancel" | "delete"; id: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -60,9 +61,15 @@ export function OrdersClient({ orders }: OrdersClientProps) {
     <div>
       <PageHeader title="Orders" description="View and manage all orders" />
 
+      {loadError && (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+          {loadError}
+        </div>
+      )}
+
       <div className="space-y-3">
         {orders.length === 0 ? (
-          <Card><CardContent className="py-12 text-center text-muted-foreground">No orders yet</CardContent></Card>
+          <Card><CardContent className="py-12 text-center text-muted-foreground">{loadError ? "No orders loaded" : "No orders yet"}</CardContent></Card>
         ) : (
           orders.map((order) => (
             <Card key={order.id}>
@@ -78,7 +85,7 @@ export function OrdersClient({ orders }: OrdersClientProps) {
                       {order.items.length} items • {order.user.name} • {formatDate(order.createdAt)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {order.items.map((i) => `${i.quantity}x ${i.product.name}`).join(", ")}
+                      {order.items.map((i) => `${i.quantity}x ${i.product?.name ?? "Item"}`).join(", ")}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
