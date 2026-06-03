@@ -1,13 +1,15 @@
 /**
  * Executive-quality Excel workbooks (Summary + Details + Chart Data).
- * Uses xlsx-js-style. Charts are on Chart Data sheet; in-app preview has visuals.
- * Conditional rules are applied as cell styles (library does not embed Excel CF rules).
+ * Styled sheets via xlsx-js-style; chart PNGs embedded on Summary via ExcelJS.
  */
 
 import type { ReportModuleId } from "@/components/reports/report-modules";
 import type { ReportSettingsInfo } from "@/components/reports/report-viewer";
+import { buildReportChartImages, type ReportChartImage } from "@/lib/report-chart-images";
 import { getPaymentMethodLabel } from "@/lib/payments";
 import { formatDate } from "@/lib/utils";
+
+const CHART_ROW_SPAN = 14;
 
 export const EXCEL_REPORT_IDS: ReportModuleId[] = [
   "sales",
@@ -66,7 +68,13 @@ type WorkbookInput = {
   };
   details: DetailTableConfig;
   chartSeries?: ChartSeries[];
+  chartImages?: ReportChartImage[];
   notes?: string[];
+};
+
+type SummaryBuildResult = {
+  ws: WorkSheet;
+  chartImageAnchorRows: number[];
 };
 
 type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
@@ -505,7 +513,7 @@ function buildSummarySheet(
   input: WorkbookInput,
   details: DetailsBuildResult,
   hasChartSheet: boolean
-): WorkSheet {
+): SummaryBuildResult {
   const { meta, kpis, paymentBreakdown, notes } = input;
   const ws: WorkSheet = {};
   let r = 0;
@@ -616,6 +624,20 @@ function buildSummarySheet(
     }
   }
 
+  const chartImageAnchorRows: number[] = [];
+  if (input.chartImages?.length) {
+    r++;
+    mergeRow(ws, r, 0, COL_COUNT - 1);
+    setCell(ws, r, 0, "Visual Analytics", styles.sectionHeader);
+    r++;
+    for (const ch of input.chartImages) {
+      mergeRow(ws, r, 0, COL_COUNT - 1);
+      setCell(ws, r, 0, ch.title, styles.chartTitle);
+      chartImageAnchorRows.push(r + 1);
+      r += 1 + CHART_ROW_SPAN;
+    }
+  }
+
   if (notes?.length) {
     r++;
     mergeRow(ws, r, 0, COL_COUNT - 1);
@@ -645,7 +667,9 @@ function buildSummarySheet(
     ws,
     r,
     0,
-    "Visual charts: use Chart Data sheet or the in-app report preview.",
+    input.chartImages?.length
+      ? "Charts above are embedded images. Chart Data sheet has source figures."
+      : "Visual charts: use Chart Data sheet or the in-app report preview.",
     styles.note
   );
   mergeRow(ws, r, 0, COL_COUNT - 1);
@@ -654,7 +678,7 @@ function buildSummarySheet(
   ws["!cols"] = [{ wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
   freezeRows(ws, 4);
   applyExecutivePageSetup(ws, 1);
-  return ws;
+  return { ws, chartImageAnchorRows };
 }
 
 function buildChartDataSheet(
@@ -696,22 +720,84 @@ type XlsxStyleModule = {
     book_append_sheet: (wb: unknown, ws: WorkSheet, name: string) => void;
     aoa_to_sheet: (data: (string | number)[][]) => WorkSheet;
   };
+  write: (wb: unknown, opts: { bookType: string; type: string }) => ArrayBuffer;
   writeFile: (wb: unknown, filename: string) => void;
 };
+
+function downloadExcelBuffer(buffer: ArrayBuffer, filename: string) {
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function embedChartImagesAndDownload(
+  xlsxBuffer: ArrayBuffer,
+  filename: string,
+  chartImages: ReportChartImage[],
+  anchorRows: number[]
+) {
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(xlsxBuffer);
+
+  const summary = workbook.getWorksheet(SHEET_SUMMARY);
+  if (summary) {
+    for (let i = 0; i < chartImages.length; i++) {
+      const img = chartImages[i];
+      if (!img.base64) continue;
+      const anchorRow = anchorRows[i] ?? 12 + i * CHART_ROW_SPAN;
+      const imageId = workbook.addImage({
+        base64: img.base64,
+        extension: "png",
+      });
+      summary.addImage(imageId, {
+        tl: { col: 0.15, row: anchorRow },
+        ext: { width: 540, height: 248 },
+      });
+      for (let offset = 0; offset < CHART_ROW_SPAN; offset++) {
+        const row = summary.getRow(anchorRow + offset + 1);
+        row.height = 18;
+      }
+    }
+  }
+
+  const out = await workbook.xlsx.writeBuffer();
+  downloadExcelBuffer(out as ArrayBuffer, filename);
+}
 
 async function writeWorkbook(input: WorkbookInput): Promise<void> {
   const XLSX = (await import("xlsx-js-style")) as XlsxStyleModule;
   const wb = XLSX.utils.book_new();
-  const hasCharts = Boolean(input.chartSeries?.length);
+  const hasChartSheet = Boolean(input.chartSeries?.length);
 
   const detailsResult = buildDetailsSheet(XLSX, input.details);
-  const summaryWs = buildSummarySheet(input, detailsResult, hasCharts);
-  const chartWs = hasCharts ? buildChartDataSheet(XLSX, input.chartSeries!) : null;
+  const summaryResult = buildSummarySheet(input, detailsResult, hasChartSheet);
+  const chartWs = hasChartSheet ? buildChartDataSheet(XLSX, input.chartSeries!) : null;
 
-  XLSX.utils.book_append_sheet(wb, summaryWs, SHEET_SUMMARY);
+  XLSX.utils.book_append_sheet(wb, summaryResult.ws, SHEET_SUMMARY);
   XLSX.utils.book_append_sheet(wb, detailsResult.ws, SHEET_DETAILS);
   if (chartWs) XLSX.utils.book_append_sheet(wb, chartWs, SHEET_CHART);
-  XLSX.writeFile(wb, input.meta.filename);
+
+  const chartImages = input.chartImages?.filter((c) => c.base64.length > 0) ?? [];
+  if (chartImages.length > 0 && summaryResult.chartImageAnchorRows.length > 0) {
+    const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    await embedChartImagesAndDownload(
+      buffer,
+      input.meta.filename,
+      chartImages,
+      summaryResult.chartImageAnchorRows
+    );
+  } else {
+    XLSX.writeFile(wb, input.meta.filename);
+  }
 }
 
 // ——— Report-specific builders ———
@@ -789,6 +875,7 @@ export async function exportReportExcel(
   data: ReportExcelData
 ): Promise<number> {
   const slug = `${reportId}-report-${dateSuffix}`;
+  const chartImages = await buildReportChartImages(reportId, data);
 
   switch (reportId) {
     case "sales": {
@@ -818,6 +905,7 @@ export async function exportReportExcel(
       }
       await writeWorkbook({
         meta: baseMeta("Sales Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Total Revenue", value: s?.totalRevenue ?? 0, isCurrency: true },
           { label: "Completed Orders", value: s?.orderCount ?? 0 },
@@ -854,6 +942,7 @@ export async function exportReportExcel(
       const p = data.payment;
       await writeWorkbook({
         meta: baseMeta("Payment Method Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Grand Total (Payments)", value: p?.total ?? 0, isCurrency: true },
           { label: "Order Sales Total", value: p?.salesTotal ?? 0, isCurrency: true },
@@ -894,6 +983,7 @@ export async function exportReportExcel(
       const totalRev = list.reduce((s, c) => s + c.revenue, 0);
       await writeWorkbook({
         meta: baseMeta("Cashier Performance Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Cashiers", value: list.length },
           { label: "Total Revenue", value: totalRev, isCurrency: true },
@@ -929,6 +1019,7 @@ export async function exportReportExcel(
       const totalRetail = products.reduce((s, p) => s + p.retailValue, 0);
       await writeWorkbook({
         meta: baseMeta("Inventory Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Active SKUs", value: products.length },
           { label: "Low Stock Items", value: inv?.lowStock.length ?? 0 },
@@ -961,6 +1052,7 @@ export async function exportReportExcel(
       const roomRevTotal = rooms.reduce((s, r) => s + r.revenue, 0);
       await writeWorkbook({
         meta: baseMeta("Room Occupancy Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Occupancy Rate", value: `${occ?.occupancyRate ?? 0}%` },
           { label: "Total Rooms", value: occ?.totalRooms ?? 0 },
@@ -1002,6 +1094,7 @@ export async function exportReportExcel(
       const p = data.profit;
       await writeWorkbook({
         meta: baseMeta("Profit Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Revenue", value: p?.revenue ?? 0, isCurrency: true },
           { label: "Cost of Goods", value: p?.cost ?? 0, isCurrency: true },
@@ -1039,6 +1132,7 @@ export async function exportReportExcel(
       const total = list.reduce((s, e) => s + e.amount, 0);
       await writeWorkbook({
         meta: baseMeta("Expense Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Total Expenses", value: total, isCurrency: true },
           { label: "Line Items", value: list.length },
@@ -1061,6 +1155,7 @@ export async function exportReportExcel(
       const totalMargin = list.reduce((s, p) => s + p.margin, 0);
       await writeWorkbook({
         meta: baseMeta("Product Performance Report", settings, dateRangeLabel, generatedAt, generatedBy, slug),
+        chartImages,
         kpis: [
           { label: "Products Sold", value: list.length },
           { label: "Total Revenue", value: totalRev, isCurrency: true },
