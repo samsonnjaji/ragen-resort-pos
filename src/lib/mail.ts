@@ -59,6 +59,39 @@ export async function sendMail(options: {
   }
 }
 
+export async function sendWelcomeUserEmail(
+  to: string,
+  data: { name: string; role: string; loginUrl: string; temporaryPassword: string }
+): Promise<SendMailResult> {
+  return sendMail({
+    to,
+    subject: "Welcome to RAGEN RESORT POS",
+    text: [
+      `Hello ${data.name},`,
+      "",
+      "An administrator created your RAGEN RESORT POS account.",
+      "",
+      `Role: ${data.role}`,
+      `Login URL: ${data.loginUrl}`,
+      `Temporary password: ${data.temporaryPassword}`,
+      "",
+      "You must change this password immediately after your first login.",
+      "Do not share this password.",
+      "",
+      "— RAGEN RESORT POS",
+    ].join("\n"),
+    html: `
+      <p>Hello <strong>${data.name}</strong>,</p>
+      <p>Your <strong>RAGEN RESORT POS</strong> account is ready.</p>
+      <p><strong>Role:</strong> ${data.role}</p>
+      <p><strong>Login:</strong> <a href="${data.loginUrl}">${data.loginUrl}</a></p>
+      <p><strong>Temporary password:</strong> <code>${data.temporaryPassword}</code></p>
+      <p><strong>You must change this password immediately after your first login.</strong></p>
+      <p>Do not share this password.</p>
+    `,
+  });
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<SendMailResult> {
   const business = process.env.EMAIL_FROM?.includes("<")
     ? "RAGEN RESORT POS"

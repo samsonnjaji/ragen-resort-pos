@@ -22,6 +22,7 @@ import {
   restoreSupplier,
   restoreCategory,
   restoreArchivedUser,
+  permanentDeleteUser,
 } from "@/lib/actions/archive";
 import { formatCurrency, formatDate, ROLE_LABELS } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/app-error";
@@ -48,25 +49,45 @@ interface ArchiveClientProps {
   products: ArchivedProduct[];
   suppliers: Array<{ id: string; name: string; phone: string | null; email: string | null; updatedAt: string }>;
   categories: Array<{ id: string; name: string; description: string | null; type: string; updatedAt: string }>;
-  users: Array<{ id: string; name: string; email: string; role: string; updatedAt: string }>;
+  users: Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    archivedAt: string;
+    archivedByName: string;
+    archivedByEmail: string | null;
+    archiveReason: string | null;
+    hasHistory: boolean;
+    historyCount: number;
+  }>;
 }
 
 export function ArchiveClient({ products, suppliers, categories, users }: ArchiveClientProps) {
   const [loading, setLoading] = useState(false);
   const [restoreId, setRestoreId] = useState<{ type: "product" | "supplier" | "category" | "user"; id: string; name: string } | null>(null);
   const [permanentProduct, setPermanentProduct] = useState<ArchivedProduct | null>(null);
+  const [permanentUser, setPermanentUser] = useState<ArchiveClientProps["users"][0] | null>(null);
   const [confirmName, setConfirmName] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
   const [irreversible, setIrreversible] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
-  const canPermanentDelete =
+  const canPermanentDeleteProduct =
     permanentProduct &&
     irreversible &&
     confirmName.trim() === permanentProduct.name.trim() &&
     password.length > 0 &&
     !permanentProduct.hasHistory;
+
+  const canPermanentDeleteUser =
+    permanentUser &&
+    irreversible &&
+    confirmEmail.trim().toLowerCase() === permanentUser.email.trim().toLowerCase() &&
+    password.length > 0 &&
+    !permanentUser.hasHistory;
 
   const handleRestore = async () => {
     if (!restoreId) return;
@@ -96,8 +117,8 @@ export function ArchiveClient({ products, suppliers, categories, users }: Archiv
     }
   };
 
-  const handlePermanentDelete = async () => {
-    if (!permanentProduct || !canPermanentDelete) return;
+  const handlePermanentDeleteProduct = async () => {
+    if (!permanentProduct || !canPermanentDeleteProduct) return;
     setLoading(true);
     try {
       await permanentDeleteProduct({
@@ -109,6 +130,29 @@ export function ArchiveClient({ products, suppliers, categories, users }: Archiv
       toast({ title: "Product permanently deleted" });
       setPermanentProduct(null);
       setConfirmName("");
+      setPassword("");
+      setIrreversible(false);
+      router.refresh();
+    } catch (err) {
+      toast({ title: "Cannot delete", description: getErrorMessage(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePermanentDeleteUser = async () => {
+    if (!permanentUser || !canPermanentDeleteUser) return;
+    setLoading(true);
+    try {
+      await permanentDeleteUser({
+        id: permanentUser.id,
+        confirmEmail,
+        password,
+        irreversibleConfirmed: irreversible,
+      });
+      toast({ title: "User permanently deleted" });
+      setPermanentUser(null);
+      setConfirmEmail("");
       setPassword("");
       setIrreversible(false);
       router.refresh();
@@ -225,17 +269,41 @@ export function ArchiveClient({ products, suppliers, categories, users }: Archiv
           ) : (
             users.map((u) => (
               <Card key={u.id}>
-                <CardContent className="p-4 flex justify-between items-center">
+                <CardContent className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{u.name}</span>
                       <Badge variant="outline">{ROLE_LABELS[u.role]}</Badge>
+                      {u.hasHistory && (
+                        <Badge variant="warning">{u.historyCount} history records</Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">{u.email}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Deactivated {formatDate(new Date(u.archivedAt))} by {u.archivedByName}
+                      {u.archivedByEmail ? ` (${u.archivedByEmail})` : ""}
+                    </p>
+                    {u.archiveReason && (
+                      <p className="text-xs text-muted-foreground mt-1">Reason: {u.archiveReason}</p>
+                    )}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setRestoreId({ type: "user", id: u.id, name: u.name })}>
-                    <RotateCcw className="h-4 w-4 mr-1" /> Activate
-                  </Button>
+                  <div className="flex gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => setRestoreId({ type: "user", id: u.id, name: u.name })}>
+                      <RotateCcw className="h-4 w-4 mr-1" /> Restore
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setPermanentUser(u);
+                        setConfirmEmail("");
+                        setPassword("");
+                        setIrreversible(false);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" /> Permanently Delete
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))
@@ -281,8 +349,43 @@ export function ArchiveClient({ products, suppliers, categories, users }: Archiv
                 <input type="checkbox" checked={irreversible} onChange={(e) => setIrreversible(e.target.checked)} className="mt-1" />
                 I understand this action is irreversible and cannot be undone.
               </label>
-              <Button variant="destructive" className="w-full" disabled={!canPermanentDelete || loading} onClick={handlePermanentDelete}>
+              <Button variant="destructive" className="w-full" disabled={!canPermanentDeleteProduct || loading} onClick={handlePermanentDeleteProduct}>
                 {loading ? "Deleting..." : "Permanently Delete Product"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!permanentUser} onOpenChange={(open) => !open && setPermanentUser(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-destructive">Permanent Delete User — Danger Zone</DialogTitle>
+            <DialogDescription>
+              Permanent deletion removes this user from the database. This cannot be undone. Users with sales, payments, reports, or audit history cannot be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+
+          {permanentUser?.hasHistory ? (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+              This user has historical activity and cannot be permanently deleted. They can remain archived/deactivated.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm">
+                Type the exact email: <strong>{permanentUser?.email}</strong>
+              </p>
+              <Input value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} placeholder="user@email.com" />
+              <div className="space-y-2">
+                <Label>Your admin password</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              </div>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={irreversible} onChange={(e) => setIrreversible(e.target.checked)} className="mt-1" />
+                I understand this permanently deletes this user and cannot be undone.
+              </label>
+              <Button variant="destructive" className="w-full" disabled={!canPermanentDeleteUser || loading} onClick={handlePermanentDeleteUser}>
+                {loading ? "Deleting..." : "Permanently Delete User"}
               </Button>
             </div>
           )}

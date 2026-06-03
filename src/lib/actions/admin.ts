@@ -512,74 +512,16 @@ export async function getUsers() {
   if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
 
   return prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
+    where: { active: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+      mustChangePassword: true,
+      createdAt: true,
+    },
     orderBy: { name: "asc" },
   });
-}
-
-export async function createUser(data: {
-  name: string;
-  email: string;
-  password: string;
-  role: string;
-}) {
-  const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
-
-  const bcrypt = await import("bcryptjs");
-  const hashedPassword = await bcrypt.hash(data.password, 12);
-
-  const user = await prisma.user.create({
-    data: {
-      name: data.name,
-      email: data.email,
-      password: hashedPassword,
-      role: data.role as "ADMIN" | "CASHIER" | "RESTAURANT" | "BAR" | "ROOM_MANAGER",
-    },
-  });
-
-  await logActivity("CREATE", "User", user.id, user.name);
-  revalidatePath("/users");
-  return user;
-}
-
-export async function updateUser(
-  id: string,
-  data: Partial<{ name: string; email: string; role: string; active: boolean; password?: string }>
-) {
-  const session = await getSession();
-  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
-
-  if (data.active === false) {
-    const existing = await prisma.user.findUnique({ where: { id } });
-    if (existing?.role === "ADMIN") {
-      const otherAdmins = await prisma.user.count({
-        where: { role: "ADMIN", active: true, id: { not: id } },
-      });
-      if (otherAdmins === 0) {
-        throw new AppError("Cannot deactivate the last admin account.");
-      }
-    }
-  }
-
-  const updateData: Record<string, unknown> = { ...data };
-  delete updateData.password;
-
-  if (data.password) {
-    const bcrypt = await import("bcryptjs");
-    updateData.password = await bcrypt.hash(data.password, 12);
-  }
-
-  if (data.role) {
-    updateData.role = data.role;
-  }
-
-  const user = await prisma.user.update({
-    where: { id },
-    data: updateData,
-  });
-
-  await logActivity("UPDATE", "User", id);
-  revalidatePath("/users");
-  return user;
 }

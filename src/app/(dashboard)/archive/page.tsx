@@ -27,10 +27,7 @@ export default async function ArchivePage() {
         ...c,
         updatedAt: c.updatedAt.toISOString(),
       }))}
-      users={users.map((u) => ({
-        ...u,
-        updatedAt: u.updatedAt.toISOString(),
-      }))}
+      users={users}
     />
   );
 }

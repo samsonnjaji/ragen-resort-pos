@@ -6,6 +6,7 @@ import { getSession, logActivity } from "./dashboard";
 import { revalidatePath } from "next/cache";
 import { ProductStatus } from "@prisma/client";
 import { AppError } from "@/lib/app-error";
+import { getUserDependencyCounts } from "./users";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -96,11 +97,32 @@ export async function getArchivedCategories() {
 
 export async function getDeactivatedUsers() {
   await requireAdmin();
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: { active: false },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, email: true, role: true, updatedAt: true },
+    orderBy: [{ archivedAt: "desc" }, { updatedAt: "desc" }],
+    include: {
+      archivedBy: { select: { id: true, name: true, email: true } },
+    },
   });
+
+  return Promise.all(
+    users.map(async (u) => {
+      const deps = await getUserDependencyCounts(u.id);
+      return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        archiveReason: u.archiveReason,
+        archivedAt: (u.archivedAt ?? u.updatedAt).toISOString(),
+        archivedByName: u.archivedBy?.name ?? "—",
+        archivedByEmail: u.archivedBy?.email ?? null,
+        hasHistory: deps.total > 0,
+        historyCount: deps.total,
+        history: deps,
+      };
+    })
+  );
 }
 
 export async function archiveProduct(id: string, archiveReason?: string) {
@@ -243,13 +265,122 @@ export async function restoreCategory(id: string) {
   revalidatePath("/products");
 }
 
+export async function archiveUser(id: string, archiveReason?: string) {
+  const session = await requireAdmin();
+
+  if (id === session.user.id) {
+    throw new AppError("You cannot deactivate your own account.");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError("User not found.");
+  if (!user.active) throw new AppError("User is already deactivated.");
+
+  if (user.role === "ADMIN") {
+    const otherAdmins = await prisma.user.count({
+      where: { role: "ADMIN", active: true, id: { not: id } },
+    });
+    if (otherAdmins === 0) {
+      throw new AppError("You cannot deactivate the last active admin.");
+    }
+  }
+
+  const now = new Date();
+  await prisma.user.update({
+    where: { id },
+    data: {
+      active: false,
+      archivedAt: now,
+      archivedById: session.user.id,
+      archiveReason: archiveReason?.trim() || null,
+    },
+  });
+
+  await logActivity("USER_ARCHIVED", "User", id, user.email, {
+    role: user.role,
+    archiveReason: archiveReason?.trim() || null,
+    adminId: session.user.id,
+  });
+
+  revalidatePath("/users");
+  revalidatePath("/archive");
+}
+
 export async function restoreArchivedUser(id: string) {
   const session = await requireAdmin();
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError("User not found.");
 
-  await prisma.user.update({ where: { id }, data: { active: true } });
-  await logActivity("RESTORE", "User", id, user.email);
+  await prisma.user.update({
+    where: { id },
+    data: {
+      active: true,
+      archivedAt: null,
+      archivedById: null,
+      archiveReason: null,
+    },
+  });
+
+  await logActivity("USER_RESTORED", "User", id, user.email, {
+    adminId: session.user.id,
+  });
+  revalidatePath("/archive");
+  revalidatePath("/users");
+}
+
+export async function permanentDeleteUser(input: {
+  id: string;
+  confirmEmail: string;
+  password: string;
+  irreversibleConfirmed: boolean;
+}) {
+  const session = await requireAdmin();
+
+  const user = await prisma.user.findUnique({ where: { id: input.id } });
+  if (!user) throw new AppError("User not found.");
+  if (user.active) {
+    throw new AppError("Only deactivated users can be permanently deleted. Deactivate the user first.");
+  }
+
+  await logActivity("PERMANENT_DELETE_USER_ATTEMPT", "User", user.id, user.email, {
+    adminId: session.user.id,
+  });
+
+  if (!input.irreversibleConfirmed) {
+    throw new AppError("You must confirm this action is irreversible.");
+  }
+
+  if (input.confirmEmail.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+    throw new AppError("Email does not match.");
+  }
+
+  const admin = await prisma.user.findUnique({ where: { id: session.user.id } });
+  if (!admin) throw new AppError("Admin account not found.");
+
+  const passwordValid = await bcrypt.compare(input.password, admin.password);
+  if (!passwordValid) {
+    throw new AppError("Incorrect admin password.");
+  }
+
+  const deps = await getUserDependencyCounts(user.id);
+
+  if (deps.total > 0) {
+    await logActivity("PERMANENT_DELETE_USER_BLOCKED", "User", user.id, user.email, {
+      ...deps,
+      adminId: session.user.id,
+    });
+    throw new AppError(
+      "This user has historical activity and cannot be permanently deleted. They can remain archived/deactivated."
+    );
+  }
+
+  await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+  await prisma.user.delete({ where: { id: user.id } });
+
+  await logActivity("PERMANENT_DELETE_USER_SUCCESS", "User", user.id, user.email, {
+    adminId: session.user.id,
+  });
+
   revalidatePath("/archive");
   revalidatePath("/users");
 }

@@ -166,6 +166,17 @@ npx prisma migrate deploy
 
 Use `npx prisma db push` only for local/dev experiments — production should use **migrations**.
 
+### Staff onboarding (temporary passwords)
+
+1. **Admin → Users → Add User** — enter name, email, and role only (no manual password).
+2. System generates a secure temporary password and shows it **once** with a copy button.
+3. Welcome email is sent via Gmail SMTP when configured.
+4. On first login, the user is redirected to **Change password** before accessing POS or reports.
+5. **Deactivate** moves users to **Archive → Deactivated Users**; history is kept.
+6. **Permanent delete** is only in Archive, for deactivated users with **no** sales/payment/audit history.
+
+**Recommended production email:** `ragenresortpos@gmail.com` with a Google App Password — do not use a developer’s personal Gmail for client production.
+
 ### Password reset (test)
 
 1. Set all email env vars and `APP_BASE_URL`.

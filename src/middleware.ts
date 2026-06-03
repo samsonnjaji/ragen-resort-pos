@@ -29,6 +29,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  const mustChangePassword = Boolean(token.mustChangePassword);
+
+  if (mustChangePassword) {
+    const allowedWhilePending = ["/change-password", "/api/auth"];
+    const allowed = allowedWhilePending.some((p) => pathname.startsWith(p));
+    if (!allowed) {
+      return NextResponse.redirect(new URL("/change-password", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (pathname === "/change-password") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   if (pathname === "/") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }

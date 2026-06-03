@@ -96,21 +96,30 @@ enum PurchaseStatus {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(CASHIER)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  password           String
+  role               Role      @default(CASHIER)
+  active             Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  passwordSetAt      DateTime?
+  inviteSentAt       DateTime?
+  inviteAcceptedAt   DateTime?
+  archivedAt         DateTime?
+  archivedById       String?
+  archiveReason      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  orders        Order[]
-  payments      Payment[]
-  activityLogs  ActivityLog[]
-  inventoryMovements InventoryMovement[]
-  archivedProducts Product[] @relation("ArchivedProducts")
-  passwordResetTokens PasswordResetToken[]
+  orders               Order[]
+  payments             Payment[]
+  activityLogs         ActivityLog[]
+  inventoryMovements   InventoryMovement[]
+  archivedProducts     Product[]             @relation("ArchivedProducts")
+  passwordResetTokens  PasswordResetToken[]
+  archivedBy           User?                 @relation("ArchivedUsers", fields: [archivedById], references: [id], onDelete: SetNull)
+  archivedUsers        User[]                @relation("ArchivedUsers")
 }
 
 model PasswordResetToken {

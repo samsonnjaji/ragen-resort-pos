@@ -24,6 +24,7 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const resetSuccess = searchParams.get("reset") === "success";
+  const passwordChanged = searchParams.get("passwordChanged") === "1";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -123,7 +124,7 @@ export default function LoginForm() {
               {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>
 
-            {resetSuccess && (
+            {(resetSuccess || passwordChanged) && (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-600 dark:text-emerald-400">
                 Your password was updated. Sign in with your new password.
               </div>

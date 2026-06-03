@@ -2,6 +2,7 @@ export const ROLES = ["ADMIN", "CASHIER", "RESTAURANT", "BAR", "ROOM_MANAGER"] a
 export type AppRole = (typeof ROLES)[number];
 
 export const ROUTE_PERMISSIONS: Record<string, AppRole[]> = {
+  "/change-password": ["ADMIN", "CASHIER", "RESTAURANT", "BAR", "ROOM_MANAGER"],
   "/dashboard": ["ADMIN", "CASHIER", "RESTAURANT", "BAR", "ROOM_MANAGER"],
   "/pos": ["ADMIN", "CASHIER"],
   "/orders": ["ADMIN", "CASHIER", "RESTAURANT", "BAR"],

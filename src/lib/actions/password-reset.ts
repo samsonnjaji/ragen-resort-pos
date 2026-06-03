@@ -156,10 +156,15 @@ export async function completePasswordReset(formData: {
 
   const hashed = await bcrypt.hash(parsed.data.password, 12);
 
+  const now = new Date();
   await prisma.$transaction([
     prisma.user.update({
       where: { id: record.userId },
-      data: { password: hashed },
+      data: {
+        password: hashed,
+        mustChangePassword: false,
+        passwordSetAt: now,
+      },
     }),
     prisma.passwordResetToken.update({
       where: { id: record.id },

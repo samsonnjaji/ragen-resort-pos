@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "mustChangePassword" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN "passwordSetAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "inviteSentAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "inviteAcceptedAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "archivedAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "archivedById" TEXT;
+ALTER TABLE "User" ADD COLUMN "archiveReason" TEXT;
+
+-- AddForeignKey
+ALTER TABLE "User" ADD CONSTRAINT "User_archivedById_fkey" FOREIGN KEY ("archivedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
