@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 const loginSchema = z.object({
@@ -22,6 +23,7 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const resetSuccess = searchParams.get("reset") === "success";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -54,7 +56,7 @@ export default function LoginForm() {
     setError("");
 
     const result = await signIn("credentials", {
-      email: data.email,
+      email: data.email.trim().toLowerCase(),
       password: data.password,
       redirect: false,
     });
@@ -121,11 +123,23 @@ export default function LoginForm() {
               {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
             </div>
 
+            {resetSuccess && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-600 dark:text-emerald-400">
+                Your password was updated. Sign in with your new password.
+              </div>
+            )}
+
             {error && (
               <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                 {error}
               </div>
             )}
+
+            <div className="text-right">
+              <Link href="/forgot-password" className="text-sm text-gold hover:underline">
+                Forgot password?
+              </Link>
+            </div>
 
             <Button type="submit" className="w-full h-14 text-base touch-target" variant="gold" disabled={loading}>
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}

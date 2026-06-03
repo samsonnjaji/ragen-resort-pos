@@ -45,6 +45,22 @@ export function generatePurchaseNumber(): string {
   return `PO-${date}-${random}`;
 }
 
+/** Resolve report date range; custom requires both start and end. */
+export function resolveReportDateRange(
+  filter: string,
+  startDate?: Date,
+  endDate?: Date
+): { start: Date; end: Date } {
+  if (filter === "custom" && startDate && endDate) {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  return getDateRange(filter === "custom" ? "today" : filter);
+}
+
 export function getDateRange(filter: string): { start: Date; end: Date } {
   const now = new Date();
   const end = new Date(now);

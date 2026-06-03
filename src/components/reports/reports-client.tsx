@@ -21,9 +21,13 @@ import {
   getInventoryReport,
   getOccupancyReport,
   getPaymentSummary,
+  getExpensesForReport,
+  logReportExported,
 } from "@/lib/actions/admin";
 import { getPaymentMethodLabel } from "@/lib/payments";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
+import { buildCsv, downloadCsvFile, reportDateSuffix } from "@/lib/report-export";
+import { useToast } from "@/hooks/use-toast";
 import { Download, FileSpreadsheet, Package, BedDouble } from "lucide-react";
 import {
   BarChart,
@@ -39,6 +43,7 @@ import {
 } from "recharts";
 
 const OCCUPANCY_COLORS = ["#10B981", "#EF4444", "#EAB308", "#3B82F6", "#6B7280"];
+const NO_DATA_ROW = ["No records found for this period"];
 
 export function ReportsClient() {
   const [filter, setFilter] = useState("today");
@@ -48,77 +53,327 @@ export function ReportsClient() {
   const [inventoryData, setInventoryData] = useState<Awaited<ReturnType<typeof getInventoryReport>>>([]);
   const [occupancyData, setOccupancyData] = useState<Awaited<ReturnType<typeof getOccupancyReport>> | null>(null);
   const [paymentSummary, setPaymentSummary] = useState<Awaited<ReturnType<typeof getPaymentSummary>> | null>(null);
+  const [expensesData, setExpensesData] = useState<Awaited<ReturnType<typeof getExpensesForReport>>>([]);
+  const [reportsLoaded, setReportsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const { toast } = useToast();
+
+  const dateSuffix = reportDateSuffix(filter, customStart, customEnd);
+
+  const resolveDates = () => {
+    if (filter === "custom") {
+      if (!customStart || !customEnd) {
+        toast({
+          title: "Select date range",
+          description: "Choose both start and end dates for a custom report.",
+          variant: "destructive",
+        });
+        return null;
+      }
+      if (customStart > customEnd) {
+        toast({
+          title: "Invalid range",
+          description: "Start date must be before end date.",
+          variant: "destructive",
+        });
+        return null;
+      }
+      return { start: new Date(customStart), end: new Date(customEnd) };
+    }
+    return { start: undefined, end: undefined };
+  };
 
   const loadReports = async () => {
+    const dates = resolveDates();
+    if (filter === "custom" && !dates) return;
+
     setLoading(true);
     try {
-      const start = filter === "custom" && customStart ? new Date(customStart) : undefined;
-      const end = filter === "custom" && customEnd ? new Date(customEnd) : undefined;
+      const start = dates?.start;
+      const end = dates?.end;
 
-      const [sales, profit, cashiers, inventory, occupancy, payments] = await Promise.all([
-        getSalesReport(filter, start, end),
-        getProfitReport(filter),
-        getCashierPerformance(filter),
-        getInventoryReport(),
-        getOccupancyReport(filter),
-        getPaymentSummary(filter, start, end),
-      ]);
+      const [sales, profit, cashiers, inventory, occupancy, payments, expenses] =
+        await Promise.all([
+          getSalesReport(filter, start, end),
+          getProfitReport(filter, start, end),
+          getCashierPerformance(filter, start, end),
+          getInventoryReport(),
+          getOccupancyReport(filter, start, end),
+          getPaymentSummary(filter, start, end),
+          getExpensesForReport(filter, start, end),
+        ]);
       setSalesData(sales);
       setProfitData(profit);
       setCashierData(cashiers);
       setInventoryData(inventory);
       setOccupancyData(occupancy);
       setPaymentSummary(payments);
+      setExpensesData(expenses);
+      setReportsLoaded(true);
     } finally {
       setLoading(false);
     }
   };
 
-  const exportCSV = (filename: string, headers: string, rows: string[]) => {
-    const blob = new Blob([headers + rows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
+  const requireLoaded = (): boolean => {
+    if (!reportsLoaded) {
+      toast({
+        title: "Generate report first",
+        description: "Click Generate Report before exporting.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
   };
 
-  const exportSalesCSV = () => {
-    exportCSV(
-      `sales-report-${filter}.csv`,
-      "Order Number,Date,Total,Status,Cashier\n",
-      salesData.map((o) =>
-        `${o.orderNumber},${formatDate(o.createdAt)},${o.total},${o.status},${o.user.name}`
-      )
-    );
+  const finishExport = async (type: string, rowCount: number, filename: string, csv: string) => {
+    downloadCsvFile(filename, csv);
+    await logReportExported(type, filter, rowCount);
+    toast({ title: "Export complete", description: filename });
   };
 
-  const exportInventoryCSV = () => {
-    exportCSV(
-      "inventory-report.csv",
-      "Product,SKU,Category,Stock,Low Alert,Cost Value,Retail Value,Low Stock\n",
-      inventoryData.map((p) =>
-        `${p.name},${p.sku},${p.category},${p.stock},${p.lowStockAlert},${p.costValue},${p.retailValue},${p.isLowStock}`
-      )
-    );
+  const exportSalesCSV = async () => {
+    if (!requireLoaded()) return;
+    setExporting(true);
+    try {
+      const rows =
+        salesData.length > 0
+          ? salesData.map((o) => {
+              const pay =
+                o.payments?.length > 0
+                  ? o.payments.map((p) => `${getPaymentMethodLabel(p.method)} ${p.amount}`).join("; ")
+                  : "";
+              return [
+                o.orderNumber,
+                formatDate(o.createdAt),
+                formatCurrency(o.total),
+                o.status,
+                o.user.name,
+                pay,
+              ];
+            })
+          : [NO_DATA_ROW];
+      const csv = buildCsv(
+        ["Order Number", "Date", "Total (KES)", "Status", "Cashier", "Payments"],
+        rows
+      );
+      await finishExport("sales", salesData.length, `sales-report-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportPaymentCSV = async () => {
+    if (!requireLoaded() || !paymentSummary) return;
+    setExporting(true);
+    try {
+      const rows: (string | number)[][] = [
+        ["Cash", formatCurrency(paymentSummary.cash)],
+        ["M-Pesa", formatCurrency(paymentSummary.mpesa)],
+        ["Card", formatCurrency(paymentSummary.card)],
+        ["Bank", formatCurrency(paymentSummary.bank)],
+        ["Grand Total", formatCurrency(paymentSummary.total)],
+        ["Total Sales (orders)", formatCurrency(paymentSummary.salesTotal)],
+        ["Order Count", paymentSummary.orderCount],
+      ];
+      if (paymentSummary.legacySplit > 0) {
+        rows.push(["Legacy Split", formatCurrency(paymentSummary.legacySplit)]);
+      }
+      const csv = buildCsv(["Payment Method", "Amount (KES)"], rows);
+      await finishExport("payments", rows.length, `payment-summary-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportCashierCSV = async () => {
+    if (!requireLoaded()) return;
+    setExporting(true);
+    try {
+      const rows =
+        cashierData.length > 0
+          ? cashierData.map((c) => [
+              c.name,
+              c.orders,
+              formatCurrency(c.revenue),
+              formatCurrency(c.cash),
+              formatCurrency(c.mpesa),
+              formatCurrency(c.card),
+              formatCurrency(c.bank),
+              c.cancellations,
+            ])
+          : [NO_DATA_ROW];
+      const csv = buildCsv(
+        [
+          "Cashier",
+          "Orders",
+          "Revenue (KES)",
+          "Cash (KES)",
+          "M-Pesa (KES)",
+          "Card (KES)",
+          "Bank (KES)",
+          "Cancellations",
+        ],
+        rows
+      );
+      await finishExport("cashiers", cashierData.length, `cashier-report-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportProfitCSV = async () => {
+    if (!requireLoaded() || !profitData) return;
+    setExporting(true);
+    try {
+      const csv = buildCsv(
+        ["Metric", "Amount (KES)"],
+        [
+          ["Revenue", formatCurrency(profitData.revenue)],
+          ["Cost of Goods", formatCurrency(profitData.cost)],
+          ["Expenses", formatCurrency(profitData.expenses)],
+          ["Net Profit", formatCurrency(profitData.profit)],
+          ["Orders", profitData.orderCount],
+        ]
+      );
+      await finishExport("profit", 1, `profit-report-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportExpensesCSV = async () => {
+    if (!requireLoaded()) return;
+    setExporting(true);
+    try {
+      const rows =
+        expensesData.length > 0
+          ? expensesData.map((e) => [
+              formatDate(e.date),
+              e.category,
+              e.description,
+              formatCurrency(e.amount),
+              e.reference ?? "",
+            ])
+          : [NO_DATA_ROW];
+      const csv = buildCsv(
+        ["Date", "Category", "Description", "Amount (KES)", "Reference"],
+        rows
+      );
+      await finishExport("expenses", expensesData.length, `expenses-report-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportInventoryCSV = async () => {
+    if (!requireLoaded()) return;
+    setExporting(true);
+    try {
+      const rows =
+        inventoryData.length > 0
+          ? inventoryData.map((p) => [
+              p.name,
+              p.sku,
+              p.category,
+              p.stock,
+              p.lowStockAlert,
+              formatCurrency(p.costValue),
+              formatCurrency(p.retailValue),
+              p.isLowStock ? "Yes" : "No",
+            ])
+          : [NO_DATA_ROW];
+      const csv = buildCsv(
+        [
+          "Product",
+          "SKU",
+          "Category",
+          "Stock",
+          "Low Alert",
+          "Cost Value (KES)",
+          "Retail Value (KES)",
+          "Low Stock",
+        ],
+        rows
+      );
+      await finishExport("inventory", inventoryData.length, `inventory-report-${dateSuffix}.csv`, csv);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportOccupancyCSV = async () => {
+    if (!requireLoaded() || !occupancyData) return;
+    setExporting(true);
+    try {
+      const statusRows = Object.entries(occupancyData.statusBreakdown).map(([k, v]) => [
+        k,
+        v,
+      ]);
+      const bookingRows =
+        occupancyData.bookings.length > 0
+          ? occupancyData.bookings.map((b) => [
+              b.guest.fullName,
+              b.room.number,
+              b.status,
+              formatDateOnly(b.checkIn),
+              formatDateOnly(b.checkOut),
+            ])
+          : [["No bookings in period", "", "", "", ""]];
+
+      const csv =
+        buildCsv(["Room Status", "Count"], statusRows) +
+        "\n" +
+        buildCsv(
+          ["Guest", "Room", "Status", "Check In", "Check Out"],
+          bookingRows
+        );
+      await finishExport(
+        "occupancy",
+        occupancyData.bookings.length,
+        `occupancy-report-${dateSuffix}.csv`,
+        csv
+      );
+    } finally {
+      setExporting(false);
+    }
   };
 
   const exportExcel = async () => {
-    const XLSX = await import("xlsx");
-    const rows = salesData.map((o) => ({
-      "Order Number": o.orderNumber,
-      Date: formatDate(o.createdAt),
-      Total: o.total,
-      Status: o.status,
-      Cashier: o.user.name,
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sales");
-    XLSX.writeFile(wb, `sales-report-${filter}.xlsx`);
+    if (!requireLoaded()) return;
+    if (salesData.length === 0) {
+      toast({
+        title: "No sales data",
+        description: "Generate a report with completed sales to export Excel.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setExporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      const rows = salesData.map((o) => ({
+        "Order Number": o.orderNumber,
+        Date: formatDate(o.createdAt),
+        "Total (KES)": o.total,
+        Status: o.status,
+        Cashier: o.user.name,
+        Payments:
+          o.payments?.map((p) => `${getPaymentMethodLabel(p.method)} ${p.amount}`).join("; ") ?? "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sales");
+      XLSX.writeFile(wb, `sales-report-${dateSuffix}.xlsx`);
+      await logReportExported("sales-excel", filter, salesData.length);
+      toast({ title: "Export complete", description: `sales-report-${dateSuffix}.xlsx` });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const totalRevenue = salesData.reduce((s, o) => s + o.total, 0);
@@ -131,6 +386,7 @@ export function ReportsClient() {
         bank: paymentSummary.bank,
       }
     : null;
+
   const occupancyChart = occupancyData
     ? Object.entries(occupancyData.statusBreakdown).map(([name, value]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
@@ -138,11 +394,13 @@ export function ReportsClient() {
       }))
     : [];
 
+  const exportDisabled = loading || exporting;
+
   return (
     <div>
       <PageHeader title="Reports" description="Business analytics and exports">
         <div className="flex gap-2 flex-wrap items-center">
-          <Select value={filter} onValueChange={setFilter}>
+          <Select value={filter} onValueChange={(v) => { setFilter(v); setReportsLoaded(false); }}>
             <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="today">Today</SelectItem>
@@ -153,15 +411,44 @@ export function ReportsClient() {
           </Select>
           {filter === "custom" && (
             <>
-              <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="w-36" />
-              <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="w-36" />
+              <Input type="date" value={customStart} onChange={(e) => { setCustomStart(e.target.value); setReportsLoaded(false); }} className="w-36" />
+              <Input type="date" value={customEnd} onChange={(e) => { setCustomEnd(e.target.value); setReportsLoaded(false); }} className="w-36" />
             </>
           )}
           <Button variant="gold" onClick={loadReports} disabled={loading}>
-            Generate Report
+            {loading ? "Loading…" : "Generate Report"}
           </Button>
         </div>
       </PageHeader>
+
+      {reportsLoaded && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportSalesCSV}>
+            <Download className="h-4 w-4 mr-1" /> Sales CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportPaymentCSV}>
+            <Download className="h-4 w-4 mr-1" /> Payments CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportCashierCSV}>
+            <Download className="h-4 w-4 mr-1" /> Cashiers CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportProfitCSV}>
+            <Download className="h-4 w-4 mr-1" /> Profit CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportExpensesCSV}>
+            <Download className="h-4 w-4 mr-1" /> Expenses CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportInventoryCSV}>
+            <Download className="h-4 w-4 mr-1" /> Inventory CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportOccupancyCSV}>
+            <Download className="h-4 w-4 mr-1" /> Occupancy CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exportDisabled} onClick={exportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Sales Excel
+          </Button>
+        </div>
+      )}
 
       {paymentSummary && (
         <Card className="mb-6">
@@ -217,7 +504,7 @@ export function ReportsClient() {
         </div>
       )}
 
-      {paymentMethodSales && salesData.length > 0 && (
+      {paymentMethodSales && reportsLoaded && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-6">
           <StatCard title="Total Sales" value={totalRevenue} icon={FileSpreadsheet} variant="gold" />
           <StatCard title="Cash Sales" value={paymentMethodSales.cash} icon={FileSpreadsheet} variant="emerald" />
@@ -244,16 +531,10 @@ export function ReportsClient() {
         </TabsList>
 
         <TabsContent value="sales" className="mt-4">
-          <div className="flex gap-2 mb-4">
-            {salesData.length > 0 && (
-              <>
-                <Button variant="outline" size="sm" onClick={exportSalesCSV}><Download className="h-4 w-4 mr-1" /> CSV</Button>
-                <Button variant="outline" size="sm" onClick={exportExcel}><FileSpreadsheet className="h-4 w-4 mr-1" /> Excel</Button>
-              </>
-            )}
-          </div>
-          {salesData.length === 0 ? (
+          {!reportsLoaded ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
+          ) : salesData.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">No completed sales in this period</CardContent></Card>
           ) : (
             <>
               <p className="text-lg font-bold mb-4">Total: {formatCurrency(totalRevenue)} ({salesData.length} orders)</p>
@@ -264,7 +545,7 @@ export function ReportsClient() {
                       <div>
                         <span className="font-medium text-sm">{order.orderNumber}</span>
                         <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)} • {order.user.name}</p>
-                        {order.payments.length > 0 && (
+                        {order.payments?.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {order.payments.map((p) => (
                               <Badge key={p.id} variant="outline" className="text-[10px]">
@@ -284,7 +565,7 @@ export function ReportsClient() {
         </TabsContent>
 
         <TabsContent value="profit" className="mt-4">
-          {!profitData ? (
+          {!reportsLoaded || !profitData ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
           ) : (
             <Card>
@@ -300,8 +581,10 @@ export function ReportsClient() {
         </TabsContent>
 
         <TabsContent value="cashiers" className="mt-4">
-          {cashierData.length === 0 ? (
+          {!reportsLoaded ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
+          ) : cashierData.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">No cashier data in this period</CardContent></Card>
           ) : (
             <>
               <Card className="mb-4">
@@ -345,13 +628,10 @@ export function ReportsClient() {
         </TabsContent>
 
         <TabsContent value="inventory" className="mt-4">
-          <div className="flex gap-2 mb-4">
-            {inventoryData.length > 0 && (
-              <Button variant="outline" size="sm" onClick={exportInventoryCSV}><Download className="h-4 w-4 mr-1" /> Export CSV</Button>
-            )}
-          </div>
-          {inventoryData.length === 0 ? (
+          {!reportsLoaded ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
+          ) : inventoryData.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">No active products</CardContent></Card>
           ) : (
             <div className="space-y-2">
               {inventoryData.map((p) => (
@@ -378,7 +658,7 @@ export function ReportsClient() {
         </TabsContent>
 
         <TabsContent value="occupancy" className="mt-4">
-          {!occupancyData ? (
+          {!reportsLoaded || !occupancyData ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Click Generate Report to load data</CardContent></Card>
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">

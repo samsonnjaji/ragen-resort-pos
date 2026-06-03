@@ -5,7 +5,13 @@ import { canAccessRoute } from "@/lib/permissions";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const publicPaths = ["/login", "/api/auth", "/api/health"];
+  const publicPaths = [
+    "/login",
+    "/forgot-password",
+    "/reset-password",
+    "/api/auth",
+    "/api/health",
+  ];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   if (isPublic) {

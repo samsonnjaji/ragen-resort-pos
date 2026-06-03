@@ -5,10 +5,22 @@ import { getSession, logActivity } from "./dashboard";
 import { revalidatePath } from "next/cache";
 import { generatePurchaseNumber } from "@/lib/utils";
 import { ExpenseCategory, PurchaseStatus } from "@prisma/client";
-import { getDateRange } from "@/lib/utils";
+import { getDateRange, resolveReportDateRange } from "@/lib/utils";
 import { AppError } from "@/lib/app-error";
 import { aggregatePaymentTotals } from "@/lib/payments";
 import { PaymentMethod } from "@prisma/client";
+
+export async function getExpensesForReport(
+  filter: string,
+  startDate?: Date,
+  endDate?: Date
+) {
+  const { start, end } = resolveReportDateRange(filter, startDate, endDate);
+  return prisma.expense.findMany({
+    where: { date: { gte: start, lte: end } },
+    orderBy: { date: "desc" },
+  });
+}
 
 export async function getExpenses(filter = "month") {
   const { start, end } = getDateRange(filter === "today" ? "today" : filter === "week" ? "week" : "month");
@@ -265,6 +277,18 @@ export async function deletePurchase(id: string) {
   revalidatePath("/inventory");
 }
 
+export async function logReportExported(
+  reportType: string,
+  filter: string,
+  rowCount: number
+) {
+  const session = await getSession();
+  if (session?.user?.role !== "ADMIN") throw new AppError("Unauthorized");
+  await logActivity("REPORT_EXPORTED", "Report", reportType, filter, {
+    rowCount,
+  });
+}
+
 export async function getPaymentSummary(filter: string, startDate?: Date, endDate?: Date) {
   const orders = await getSalesReport(filter, startDate, endDate);
   const totals = aggregatePaymentTotals(orders);
@@ -284,18 +308,7 @@ export async function getPaymentSummary(filter: string, startDate?: Date, endDat
 }
 
 export async function getSalesReport(filter: string, startDate?: Date, endDate?: Date) {
-  let start: Date;
-  let end: Date;
-
-  if (filter === "custom" && startDate && endDate) {
-    start = startDate;
-    end = endDate;
-    end.setHours(23, 59, 59, 999);
-  } else {
-    const range = getDateRange(filter);
-    start = range.start;
-    end = range.end;
-  }
+  const { start, end } = resolveReportDateRange(filter, startDate, endDate);
 
   const orders = await prisma.order.findMany({
     where: {
@@ -313,8 +326,8 @@ export async function getSalesReport(filter: string, startDate?: Date, endDate?:
   return orders;
 }
 
-export async function getProfitReport(filter: string) {
-  const { start, end } = getDateRange(filter);
+export async function getProfitReport(filter: string, startDate?: Date, endDate?: Date) {
+  const { start, end } = resolveReportDateRange(filter, startDate, endDate);
 
   const [orders, expenses] = await Promise.all([
     prisma.order.findMany({
@@ -337,8 +350,8 @@ export async function getProfitReport(filter: string) {
   return { revenue, cost, expenses: expenseTotal, profit, orderCount: orders.length };
 }
 
-export async function getCashierPerformance(filter: string) {
-  const { start, end } = getDateRange(filter);
+export async function getCashierPerformance(filter: string, startDate?: Date, endDate?: Date) {
+  const { start, end } = resolveReportDateRange(filter, startDate, endDate);
 
   const [orders, cancelled] = await Promise.all([
     prisma.order.findMany({
@@ -461,8 +474,8 @@ export async function getInventoryReport() {
   }));
 }
 
-export async function getOccupancyReport(filter: string) {
-  const { start, end } = getDateRange(filter);
+export async function getOccupancyReport(filter: string, startDate?: Date, endDate?: Date) {
+  const { start, end } = resolveReportDateRange(filter, startDate, endDate);
 
   const [rooms, bookings] = await Promise.all([
     prisma.room.findMany({ orderBy: { number: "asc" } }),

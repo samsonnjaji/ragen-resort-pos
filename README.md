@@ -60,8 +60,14 @@ This is the recommended setup for resort tablets. The app runs in the cloud — 
 | `DIRECT_URL` | Neon **direct** connection string (for migrations) |
 | `NEXTAUTH_SECRET` | Random secret — run `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Your Vercel URL, e.g. `https://ragen-resort-pos.vercel.app` (no trailing slash) |
+| `APP_BASE_URL` | Same as `NEXTAUTH_URL` (used in password reset emails) |
+| `EMAIL_SERVER_HOST` | `smtp.gmail.com` |
+| `EMAIL_SERVER_PORT` | `587` |
+| `EMAIL_SERVER_USER` | Your Gmail address |
+| `EMAIL_SERVER_PASSWORD` | Google **App Password** (see below) |
+| `EMAIL_FROM` | `RAGEN RESORT POS <your-email@gmail.com>` |
 
-3. Deploy. Vercel runs `prisma generate && next build` automatically.
+3. Deploy. Vercel runs `prisma migrate deploy && prisma generate && next build` automatically.
 
 ### Step 3 — Apply database schema and seed
 
@@ -128,7 +134,52 @@ See `.env.example`:
 | `DATABASE_URL` | Neon PostgreSQL connection string (pooled for production) |
 | `DIRECT_URL` | Neon direct connection (required for `prisma migrate`) |
 | `NEXTAUTH_SECRET` | Secure random secret for session encryption |
-| `NEXTAUTH_URL` | Full deployment URL (Vercel domain or `http://localhost:3000` locally) |
+| `NEXTAUTH_URL` | Full deployment URL (no trailing slash) |
+| `APP_BASE_URL` | Public URL for password reset links (usually same as `NEXTAUTH_URL`) |
+| `EMAIL_SERVER_HOST` | SMTP host (`smtp.gmail.com` for Gmail) |
+| `EMAIL_SERVER_PORT` | SMTP port (`587` for TLS) |
+| `EMAIL_SERVER_USER` | Gmail address |
+| `EMAIL_SERVER_PASSWORD` | Google App Password (not your normal Gmail password) |
+| `EMAIL_FROM` | Sender, e.g. `RAGEN RESORT POS <you@gmail.com>` |
+
+### Gmail App Password setup
+
+1. Enable **2-Step Verification** on your Google account.
+2. Go to Google Account → **Security** → **App passwords**.
+3. Create an app password for “Mail” / “Other (RAGEN POS)”.
+4. Paste the 16-character password into `EMAIL_SERVER_PASSWORD` in Vercel (and local `.env`).
+
+### Neon database sync (production)
+
+After pulling new code with schema changes:
+
+```bash
+npx prisma migrate deploy
+```
+
+Vercel also runs this during each deploy (`vercel-build`). For a one-off fix from your machine:
+
+```bash
+# Use pooled DATABASE_URL and direct DIRECT_URL from Neon dashboard
+npx prisma migrate deploy
+```
+
+Use `npx prisma db push` only for local/dev experiments — production should use **migrations**.
+
+### Password reset (test)
+
+1. Set all email env vars and `APP_BASE_URL`.
+2. Open `/forgot-password`, enter a seeded user email.
+3. Check inbox for reset link (also check spam).
+4. Set a new password on `/reset-password?token=...`.
+5. Sign in at `/login` with the new password.
+
+### Report export (test)
+
+1. Log in as **Admin** → **Reports**.
+2. Choose **Today** (or custom range with both dates) → **Generate Report**.
+3. Use the export bar: **Sales CSV**, **Payments CSV**, **Cashiers CSV**, etc.
+4. Open the downloaded file — headers and KES amounts should match the on-screen totals.
 
 ---
 
@@ -209,9 +260,12 @@ npm run db:studio        # Prisma Studio
 ## Security
 
 - Role-based routes enforced via NextAuth middleware
-- Passwords hashed with bcrypt; never displayed in the UI
+- Passwords hashed with bcrypt; inactive users cannot sign in
+- Self-service password reset via email (hashed tokens, 30-minute expiry, one-time use)
+- Forgot-password responses do not reveal whether an email exists
 - Change default admin password immediately after deployment
 - Set a strong `NEXTAUTH_SECRET` in Vercel (never commit `.env`)
+- Never commit SMTP app passwords or database URLs
 
 ---
 
