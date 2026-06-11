@@ -29,6 +29,7 @@ export async function getRoom(id: string) {
         orderBy: { checkIn: "desc" },
       },
       roomCharges: {
+        where: { voidedAt: null },
         include: { product: true, booking: { include: { guest: true } } },
         orderBy: { createdAt: "desc" },
       },
@@ -217,29 +218,22 @@ export async function checkOutBooking(id: string) {
 
   const booking = await prisma.booking.findUnique({
     where: { id },
-    include: { roomCharges: true },
+    include: { room: true },
   });
   if (!booking) throw new Error("Booking not found");
+  if (booking.status !== BookingStatus.CHECKED_IN) {
+    throw new AppError("Only checked-in bookings can be checked out.");
+  }
 
-  const chargesTotal = booking.roomCharges.reduce((sum, c) => sum + c.total, 0);
-  const grandTotal = booking.totalAmount + chargesTotal;
+  const { checkoutRoom, getRoomAccount } = await import("./room-billing");
+  const account = await getRoomAccount(booking.roomId);
+  if (account.balanceDue > 0.009) {
+    throw new AppError(
+      `Balance due: KES ${account.balanceDue.toFixed(2)}. Complete payment on the room account before checkout.`
+    );
+  }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id },
-      data: { status: BookingStatus.CHECKED_OUT, totalAmount: grandTotal },
-    });
-    await tx.room.update({
-      where: { id: booking.roomId },
-      data: { status: RoomStatus.CLEANING },
-    });
-  });
-
-  await logActivity("CHECK_OUT", "Booking", id, `Total: ${grandTotal}`);
-  revalidatePath("/bookings");
-  revalidatePath("/rooms");
-  revalidatePath("/room-charges");
-  return { grandTotal, roomCharges: booking.roomCharges };
+  return checkoutRoom({ roomId: booking.roomId });
 }
 
 export async function cancelBooking(id: string) {
@@ -293,70 +287,45 @@ export async function addRoomCharge(data: {
   description: string;
   quantity: number;
   unitPrice: number;
+  notes?: string;
 }) {
-  const session = await getSession();
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  const { addManualRoomCharge, addProductRoomCharge } = await import("./room-billing");
 
-  const total = data.quantity * data.unitPrice;
-
-  const charge = await prisma.roomCharge.create({
-    data: {
-      bookingId: data.bookingId,
+  if (data.productId) {
+    return addProductRoomCharge({
       roomId: data.roomId,
       productId: data.productId,
-      type: data.type as "FOOD" | "DRINKS" | "ALCOHOL" | "LAUNDRY" | "EXTRA_SERVICE" | "ACCOMMODATION",
-      description: data.description,
       quantity: data.quantity,
-      unitPrice: data.unitPrice,
-      total,
-    },
-    include: { product: true },
-  });
+    });
+  }
 
-  await logActivity("CREATE", "RoomCharge", charge.id);
-  revalidatePath("/room-charges");
-  return charge;
+  return addManualRoomCharge({
+    roomId: data.roomId,
+    type: data.type as "FOOD" | "DRINKS" | "ALCOHOL" | "LAUNDRY" | "EXTRA_SERVICE" | "ROOM_SERVICE" | "DAMAGE" | "OTHER" | "ACCOMMODATION",
+    description: data.description,
+    quantity: data.quantity,
+    unitPrice: data.unitPrice,
+    notes: data.notes,
+  });
 }
 
 export async function updateRoomCharge(
   id: string,
-  data: Partial<{ description: string; quantity: number; unitPrice: number; type: string }>
+  data: Partial<{ description: string; quantity: number; unitPrice: number; type: string; notes: string }>
 ) {
-  const session = await getSession();
-  if (!session?.user?.id) throw new AppError("Unauthorized");
-
-  const existing = await prisma.roomCharge.findUnique({ where: { id } });
-  if (!existing) throw new AppError("Charge not found");
-
-  const quantity = data.quantity ?? existing.quantity;
-  const unitPrice = data.unitPrice ?? existing.unitPrice;
-
-  const charge = await prisma.roomCharge.update({
-    where: { id },
-    data: {
-      ...data,
-      type: data.type as typeof existing.type | undefined,
-      quantity,
-      unitPrice,
-      total: quantity * unitPrice,
-    },
+  const { updateRoomBillingCharge } = await import("./room-billing");
+  return updateRoomBillingCharge(id, {
+    description: data.description,
+    quantity: data.quantity,
+    unitPrice: data.unitPrice,
+    type: data.type as Parameters<typeof updateRoomBillingCharge>[1]["type"],
+    notes: data.notes,
   });
-
-  await logActivity("UPDATE", "RoomCharge", id);
-  revalidatePath("/room-charges");
-  return charge;
 }
 
 export async function deleteRoomCharge(id: string) {
-  const session = await getSession();
-  if (!session?.user?.id) throw new AppError("Unauthorized");
-
-  const charge = await prisma.roomCharge.findUnique({ where: { id } });
-  if (!charge) throw new AppError("Charge not found");
-
-  await prisma.roomCharge.delete({ where: { id } });
-  await logActivity("DELETE", "RoomCharge", id, charge.description);
-  revalidatePath("/room-charges");
+  const { voidRoomBillingCharge } = await import("./room-billing");
+  return voidRoomBillingCharge(id);
 }
 
 export async function getActiveBookings() {
@@ -365,7 +334,7 @@ export async function getActiveBookings() {
     include: {
       guest: true,
       room: true,
-      roomCharges: { include: { product: true } },
+      roomCharges: { where: { voidedAt: null }, include: { product: true } },
     },
   });
 }

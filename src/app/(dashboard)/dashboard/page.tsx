@@ -17,6 +17,7 @@ import {
   Banknote,
   Smartphone,
   CreditCard,
+  Receipt,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,10 @@ const emptyStats = {
   occupiedRooms: 0,
   availableRooms: 0,
   totalRooms: 0,
+  todayRoomCheckoutRevenue: 0,
+  todayPostedRoomCharges: 0,
+  outstandingRoomBalances: 0,
+  outstandingRoomCount: 0,
   lowStock: [] as Awaited<ReturnType<typeof getDashboardStats>>["lowStock"],
   recentActivity: [] as Awaited<ReturnType<typeof getDashboardStats>>["recentActivity"],
   settings: {
@@ -94,8 +99,14 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         <StatCard title="Room Revenue" value={stats.roomRevenue} icon={BedDouble} variant="emerald" />
+        <StatCard title="Today Room Checkouts" value={stats.todayRoomCheckoutRevenue ?? 0} icon={BedDouble} variant="gold" subtitle="Completed folio invoices" />
+        <StatCard title="Today Posted Room Charges" value={stats.todayPostedRoomCharges ?? 0} icon={Receipt} subtitle="Food, drinks, extras" />
+      </div>
+
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
         <StatCard title="Food Revenue" value={stats.foodRevenue} icon={UtensilsCrossed} />
         <StatCard title="Bar Revenue" value={stats.barRevenue} icon={Wine} />
+        <StatCard title="Outstanding Room Balances" value={stats.outstandingRoomBalances ?? 0} icon={BedDouble} variant="danger" subtitle={`${stats.outstandingRoomCount ?? 0} occupied room(s)`} />
       </div>
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">

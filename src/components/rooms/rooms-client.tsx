@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import { formatCurrency, ROOM_STATUS_COLORS, ROOM_STATUS_LABELS } from "@/lib/ut
 import { getErrorMessage } from "@/lib/app-error";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RoomStatus } from "@prisma/client";
 
@@ -41,9 +42,10 @@ interface RoomsClientProps {
     floor: number;
     bookings: Array<{ guest: { fullName: string } }>;
   }>;
+  folios: Record<string, { guestName: string; nightsStayed: number; balanceDue: number }>;
 }
 
-export function RoomsClient({ rooms }: RoomsClientProps) {
+export function RoomsClient({ rooms, folios }: RoomsClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RoomsClientProps["rooms"][0] | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -109,10 +111,13 @@ export function RoomsClient({ rooms }: RoomsClientProps) {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {rooms.map((room) => (
+        {rooms.map((room) => {
+          const folio = folios[room.id];
+          const isOccupied = room.status === RoomStatus.OCCUPIED;
+          return (
           <Card
             key={room.id}
-            className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group"
+            className="overflow-hidden hover:shadow-lg transition-shadow group"
           >
             <div className={`h-2 ${ROOM_STATUS_COLORS[room.status]}`} />
             <CardContent className="p-4">
@@ -122,8 +127,25 @@ export function RoomsClient({ rooms }: RoomsClientProps) {
               </div>
               <p className="text-sm text-muted-foreground">{formatCurrency(room.pricePerNight)}/night</p>
               <p className="text-xs text-muted-foreground mt-1">Capacity: {room.capacity}</p>
-              {room.bookings[0] && (
-                <p className="text-xs mt-2 truncate">{room.bookings[0].guest.fullName}</p>
+              {(folio || room.bookings[0]) && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs font-medium truncate">
+                    {folio?.guestName ?? room.bookings[0]?.guest.fullName}
+                  </p>
+                  {folio && (
+                    <>
+                      <p className="text-xs text-muted-foreground">{folio.nightsStayed} night(s) stayed</p>
+                      <p className="text-xs font-semibold text-gold">Balance: {formatCurrency(folio.balanceDue)}</p>
+                    </>
+                  )}
+                </div>
+              )}
+              {isOccupied && (
+                <Button size="sm" variant="gold" className="w-full mt-2 h-8" asChild>
+                  <Link href={`/rooms/${room.id}`}>
+                    <Receipt className="h-3 w-3 mr-1" /> View Bill
+                  </Link>
+                </Button>
               )}
               <Select
                 value={room.status}
@@ -148,7 +170,8 @@ export function RoomsClient({ rooms }: RoomsClientProps) {
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

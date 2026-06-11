@@ -77,6 +77,7 @@ export async function getDashboardStats() {
     lowStockProducts,
     recentActivity,
     settings,
+    roomBillingStats,
   ] = await Promise.all([
     prisma.order.findMany({
       where: {
@@ -98,6 +99,7 @@ export async function getDashboardStats() {
       include: { user: { select: { name: true } } },
     }),
     getSettings(),
+    import("./room-billing").then((m) => m.getTodayRoomBillingStats()),
   ]);
 
   const todayRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
@@ -164,6 +166,10 @@ export async function getDashboardStats() {
     lowStock,
     recentActivity,
     settings,
+    todayRoomCheckoutRevenue: roomBillingStats.todayRoomRevenue,
+    todayPostedRoomCharges: roomBillingStats.todayPostedCharges,
+    outstandingRoomBalances: roomBillingStats.outstandingBalances,
+    outstandingRoomCount: roomBillingStats.outstandingCount,
   };
 }
 
@@ -218,15 +224,25 @@ export async function getTopProducts() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const items = await prisma.orderItem.findMany({
-    where: {
-      order: {
-        createdAt: { gte: today },
-        status: "COMPLETED",
+  const [items, roomProductCharges] = await Promise.all([
+    prisma.orderItem.findMany({
+      where: {
+        order: {
+          createdAt: { gte: today },
+          status: "COMPLETED",
+        },
       },
-    },
-    include: { product: true },
-  });
+      include: { product: true },
+    }),
+    prisma.roomCharge.findMany({
+      where: {
+        createdAt: { gte: today },
+        voidedAt: null,
+        productId: { not: null },
+      },
+      include: { product: true },
+    }),
+  ]);
 
   const productMap = new Map<string, { name: string; quantity: number; revenue: number }>();
   for (const item of items) {
@@ -239,6 +255,18 @@ export async function getTopProducts() {
     existing.quantity += item.quantity;
     existing.revenue += item.total;
     productMap.set(item.productId, existing);
+  }
+
+  for (const charge of roomProductCharges) {
+    if (!charge.productId || !charge.product) continue;
+    const existing = productMap.get(charge.productId) || {
+      name: charge.product.name,
+      quantity: 0,
+      revenue: 0,
+    };
+    existing.quantity += charge.quantity;
+    existing.revenue += charge.total;
+    productMap.set(charge.productId, existing);
   }
 
   return Array.from(productMap.values())

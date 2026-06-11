@@ -31,16 +31,19 @@ import {
 import { REPORT_MODULES, getDateRangeLabel, type ReportModuleId } from "@/components/reports/report-modules";
 import {
   getSalesReportAnalytics,
-  getPaymentSummary,
-  getCashierPerformance,
   getInventoryAnalytics,
   getStockMovementReport,
-  getOccupancyReport,
   getRoomRevenueTable,
-  getProfitReport,
-  getExpensesForReport,
   getProductPerformanceReport,
 } from "@/lib/actions/reports";
+import {
+  getPaymentSummary,
+  getCashierPerformance,
+  getOccupancyReport,
+  getProfitReport,
+  getExpensesForReport,
+} from "@/lib/actions/admin";
+import { getRoomBillingReport } from "@/lib/actions/room-billing";
 import { logReportExported } from "@/lib/actions/admin";
 import { getPaymentMethodLabel } from "@/lib/payments";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
@@ -70,6 +73,7 @@ type LoadedReports = Partial<{
   stockMovement: Awaited<ReturnType<typeof getStockMovementReport>>;
   occupancy: Awaited<ReturnType<typeof getOccupancyReport>>;
   roomRevenue: Awaited<ReturnType<typeof getRoomRevenueTable>>;
+  roomBilling: Awaited<ReturnType<typeof getRoomBillingReport>>;
   profit: Awaited<ReturnType<typeof getProfitReport>>;
   expenses: Awaited<ReturnType<typeof getExpensesForReport>>;
   productPerformance: Awaited<ReturnType<typeof getProductPerformanceReport>>;
@@ -142,12 +146,14 @@ export function ReportsClient({ settings }: ReportsClientProps) {
           next.stockMovement = await getStockMovementReport(filter, start, end);
           break;
         case "occupancy": {
-          const [occ, rooms] = await Promise.all([
+          const [occ, rooms, billing] = await Promise.all([
             getOccupancyReport(filter, start, end),
             getRoomRevenueTable(filter, start, end),
+            getRoomBillingReport(filter, start, end),
           ]);
           next.occupancy = occ;
           next.roomRevenue = rooms;
+          next.roomBilling = billing;
           break;
         }
         case "profit":
@@ -736,7 +742,7 @@ function ReportPreview({
     case "stock-movement":
       return <StockMovementReportView mod={mod} settings={settings} dateRangeLabel={dateRangeLabel} generatedBy={generatedBy} generatedAt={generatedAt} movements={data.stockMovement} />;
     case "occupancy":
-      return <OccupancyReportView mod={mod} settings={settings} dateRangeLabel={dateRangeLabel} generatedBy={generatedBy} generatedAt={generatedAt} occupancy={data.occupancy} roomRevenue={data.roomRevenue} />;
+      return <OccupancyReportView mod={mod} settings={settings} dateRangeLabel={dateRangeLabel} generatedBy={generatedBy} generatedAt={generatedAt} occupancy={data.occupancy} roomRevenue={data.roomRevenue} roomBilling={data.roomBilling} />;
     case "profit":
       return <ProfitReportView mod={mod} settings={settings} dateRangeLabel={dateRangeLabel} generatedBy={generatedBy} generatedAt={generatedAt} profit={data.profit} />;
     case "expense":
@@ -1011,7 +1017,12 @@ function OccupancyReportView({
   generatedAt,
   occupancy,
   roomRevenue,
-}: ViewBase & { occupancy?: LoadedReports["occupancy"]; roomRevenue?: LoadedReports["roomRevenue"] }) {
+  roomBilling,
+}: ViewBase & {
+  occupancy?: LoadedReports["occupancy"];
+  roomRevenue?: LoadedReports["roomRevenue"];
+  roomBilling?: LoadedReports["roomBilling"];
+}) {
   const chartData = occupancy
     ? Object.entries(occupancy.statusBreakdown).map(([name, value]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
@@ -1061,6 +1072,24 @@ function OccupancyReportView({
             ]) ?? []
           }
           emptyLabel="No bookings in period"
+        />
+      </ReportSection>
+      <ReportSection title="Room Billing (Posted Charges)">
+        <ReportTable
+          columns={["Date", "Room", "Guest", "Type", "Description", "Qty", "Total", "Settled"]}
+          rows={
+            roomBilling?.map((c) => [
+              formatDateOnly(c.date),
+              c.room,
+              c.guest,
+              c.type,
+              c.description,
+              c.quantity,
+              formatCurrency(c.total),
+              c.settled ? "Yes" : "No",
+            ]) ?? []
+          }
+          emptyLabel="No room charges in period"
         />
       </ReportSection>
     </ReportViewer>

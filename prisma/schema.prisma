@@ -27,6 +27,7 @@ enum InventoryType {
   ADJUSTMENT
   WASTAGE
   SALE
+  ROOM_CHARGE
 }
 
 enum OrderStatus {
@@ -75,7 +76,10 @@ enum RoomChargeType {
   DRINKS
   ALCOHOL
   LAUNDRY
+  ROOM_SERVICE
   EXTRA_SERVICE
+  DAMAGE
+  OTHER
   ACCOMMODATION
 }
 
@@ -116,6 +120,8 @@ model User {
   payments             Payment[]
   activityLogs         ActivityLog[]
   inventoryMovements   InventoryMovement[]
+  roomCharges          RoomCharge[]          @relation("RoomChargeUser")
+  voidedRoomCharges    RoomCharge[]          @relation("VoidedRoomCharges")
   archivedProducts     Product[]             @relation("ArchivedProducts")
   passwordResetTokens  PasswordResetToken[]
   archivedBy           User?                 @relation("ArchivedUsers", fields: [archivedById], references: [id], onDelete: SetNull)
@@ -211,8 +217,9 @@ model Order {
   user     User        @relation(fields: [userId], references: [id])
   room     Room?       @relation(fields: [roomId], references: [id])
   booking  Booking?    @relation(fields: [bookingId], references: [id])
-  items    OrderItem[]
-  payments Payment[]
+  items       OrderItem[]
+  payments    Payment[]
+  roomCharges RoomCharge[] @relation("RoomChargeCheckout")
 }
 
 model OrderItem {
@@ -291,20 +298,33 @@ model Booking {
 }
 
 model RoomCharge {
-  id          String         @id @default(cuid())
-  bookingId   String
-  roomId      String
-  productId   String?
-  type        RoomChargeType
-  description String
-  quantity    Int            @default(1)
-  unitPrice   Float
-  total       Float
-  createdAt   DateTime       @default(now())
+  id              String         @id @default(cuid())
+  bookingId       String
+  roomId          String
+  productId       String?
+  type            RoomChargeType
+  description     String
+  quantity        Int            @default(1)
+  unitPrice       Float
+  total           Float
+  notes           String?
+  userId          String?
+  checkoutOrderId String?
+  voidedAt        DateTime?
+  voidedById      String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  booking Booking  @relation(fields: [bookingId], references: [id])
-  room    Room     @relation(fields: [roomId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
+  booking       Booking  @relation(fields: [bookingId], references: [id])
+  room          Room     @relation(fields: [roomId], references: [id])
+  product       Product? @relation(fields: [productId], references: [id])
+  user          User?    @relation("RoomChargeUser", fields: [userId], references: [id])
+  voidedBy      User?    @relation("VoidedRoomCharges", fields: [voidedById], references: [id])
+  checkoutOrder Order?   @relation("RoomChargeCheckout", fields: [checkoutOrderId], references: [id])
+
+  @@index([bookingId])
+  @@index([roomId])
+  @@index([checkoutOrderId])
 }
 
 model Expense {

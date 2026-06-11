@@ -77,17 +77,27 @@ export async function getProductPerformanceReport(filter: string, startDate?: Da
   await requireAdmin();
   const { start, end } = resolveReportDateRange(filter, startDate, endDate);
 
-  const items = await prisma.orderItem.findMany({
-    where: {
-      order: {
-        createdAt: { gte: start, lte: end },
-        status: "COMPLETED",
+  const [items, roomCharges] = await Promise.all([
+    prisma.orderItem.findMany({
+      where: {
+        order: {
+          createdAt: { gte: start, lte: end },
+          status: "COMPLETED",
+        },
       },
-    },
-    include: {
-      product: { include: { category: true } },
-    },
-  });
+      include: {
+        product: { include: { category: true } },
+      },
+    }),
+    prisma.roomCharge.findMany({
+      where: {
+        createdAt: { gte: start, lte: end },
+        voidedAt: null,
+        productId: { not: null },
+      },
+      include: { product: { include: { category: true } } },
+    }),
+  ]);
 
   const map = new Map<
     string,
@@ -115,6 +125,22 @@ export async function getProductPerformanceReport(filter: string, startDate?: Da
     existing.revenue += item.total;
     existing.cost += item.quantity * (item.product.costPrice ?? 0);
     map.set(item.productId, existing);
+  }
+
+  for (const charge of roomCharges) {
+    if (!charge.productId || !charge.product) continue;
+    const existing = map.get(charge.productId) ?? {
+      name: charge.product.name,
+      sku: charge.product.sku,
+      category: charge.product.category?.name ?? "Unknown",
+      quantity: 0,
+      revenue: 0,
+      cost: 0,
+    };
+    existing.quantity += charge.quantity;
+    existing.revenue += charge.total;
+    existing.cost += charge.quantity * (charge.product.costPrice ?? 0);
+    map.set(charge.productId, existing);
   }
 
   return Array.from(map.values())
@@ -181,13 +207,3 @@ export async function getRoomRevenueTable(filter: string, startDate?: Date, endD
 
   return Array.from(roomMap.values()).sort((a, b) => b.revenue - a.revenue);
 }
-
-export {
-  getSalesReport,
-  getProfitReport,
-  getCashierPerformance,
-  getInventoryReport,
-  getOccupancyReport,
-  getPaymentSummary,
-  getExpensesForReport,
-};
