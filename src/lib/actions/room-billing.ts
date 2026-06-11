@@ -28,6 +28,8 @@ import {
   isRoomBillingDisabled,
   mapProductCategoryToChargeType,
   ROOM_CHECKOUT_NOTE,
+  ROOM_PAYMENT_ORDER_NOTES,
+  WALK_IN_ROOM_SALE_NOTE,
 } from "@/lib/room-billing";
 
 const ROOM_BILLING_ROLES = ["ADMIN", "ROOM_MANAGER", "CASHIER"];
@@ -63,7 +65,7 @@ async function sumBookingPayments(bookingId: string) {
     where: {
       bookingId,
       status: OrderStatus.COMPLETED,
-      notes: { in: [FOLIO_PAYMENT_NOTE, ROOM_CHECKOUT_NOTE] },
+      notes: { in: [...ROOM_PAYMENT_ORDER_NOTES] },
     },
     include: { payments: true },
   });
@@ -349,6 +351,227 @@ export async function quickCheckInWithRoomRate(data: {
   return { roomId: data.roomId, bookingId };
 }
 
+async function resolveWalkInGuest(
+  tx: Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">,
+  customerName?: string,
+  customerPhone?: string
+) {
+  const fullName = customerName?.trim() || "Walk-in Guest";
+  const phone = customerPhone?.trim();
+
+  if (phone) {
+    const existing = await tx.guest.findFirst({ where: { phone } });
+    if (existing) {
+      if (customerName?.trim()) {
+        return tx.guest.update({
+          where: { id: existing.id },
+          data: { fullName: customerName.trim() },
+        });
+      }
+      return existing;
+    }
+  }
+
+  return tx.guest.create({
+    data: {
+      fullName,
+      phone: phone || `WALKIN-${Date.now()}`,
+    },
+  });
+}
+
+/** POS-style walk-in room sale: pay now, room becomes occupied. */
+export async function completeWalkInRoomSale(data: {
+  roomId: string;
+  nights?: number;
+  customerName?: string;
+  customerPhone?: string;
+  payments: PaymentLineInput[];
+  bookingId?: string;
+}) {
+  const session = await getSession();
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+  requireRoomBillingAccess(session.user.role);
+
+  const nights = Math.max(1, data.nights ?? 1);
+  const room = await prisma.room.findUnique({ where: { id: data.roomId } });
+  if (!room) throw new AppError("Room not found.");
+  if (isRoomBillingDisabled(room.status)) {
+    throw new AppError("Room is not available for sale (cleaning or maintenance).");
+  }
+
+  if (room.status === RoomStatus.OCCUPIED) {
+    throw new AppError("Room is already occupied. Open Room Bill to add charges.");
+  }
+
+  const total = calcAccommodationSubtotal(nights, room.pricePerNight);
+  const { payments: normalizedPayments, changeGiven, isSplit } =
+    validateAndNormalizePayments(data.payments, total);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const checkIn = new Date();
+    const checkOut = new Date(checkIn);
+    checkOut.setDate(checkOut.getDate() + nights);
+
+    let bookingId: string;
+    let guest;
+
+    if (room.status === RoomStatus.RESERVED && data.bookingId) {
+      const existing = await tx.booking.findUnique({
+        where: { id: data.bookingId },
+        include: { guest: true },
+      });
+      if (!existing || existing.roomId !== data.roomId || existing.status !== BookingStatus.RESERVED) {
+        throw new AppError("Invalid reservation for this room.");
+      }
+      guest = existing.guest;
+      if (data.customerName?.trim() || data.customerPhone?.trim()) {
+        guest = await tx.guest.update({
+          where: { id: guest.id },
+          data: {
+            fullName: data.customerName?.trim() || guest.fullName,
+            phone: data.customerPhone?.trim() || guest.phone,
+          },
+        });
+      }
+      await tx.booking.update({
+        where: { id: existing.id },
+        data: { status: BookingStatus.CHECKED_IN, checkIn, checkOut, totalAmount: 0 },
+      });
+      bookingId = existing.id;
+    } else if (room.status === RoomStatus.AVAILABLE) {
+      guest = await resolveWalkInGuest(tx, data.customerName, data.customerPhone);
+      const booking = await tx.booking.create({
+        data: {
+          guestId: guest.id,
+          roomId: data.roomId,
+          checkIn,
+          checkOut,
+          adults: 1,
+          children: 0,
+          status: BookingStatus.CHECKED_IN,
+          totalAmount: 0,
+        },
+      });
+      bookingId = booking.id;
+    } else {
+      throw new AppError("Room is not available for walk-in sale.");
+    }
+
+    await tx.room.update({
+      where: { id: data.roomId },
+      data: { status: RoomStatus.OCCUPIED },
+    });
+
+    const charge = await tx.roomCharge.create({
+      data: {
+        bookingId,
+        roomId: data.roomId,
+        type: RoomChargeType.ACCOMMODATION,
+        description: accommodationDescription(room.number),
+        quantity: nights,
+        unitPrice: room.pricePerNight,
+        total,
+        userId: session.user.id,
+      },
+    });
+
+    const order = await tx.order.create({
+      data: {
+        orderNumber: generateOrderNumber(),
+        type: OrderType.ROOM_SERVICE,
+        status: OrderStatus.COMPLETED,
+        subtotal: total,
+        total,
+        changeGiven,
+        notes: WALK_IN_ROOM_SALE_NOTE,
+        roomId: data.roomId,
+        bookingId,
+        userId: session.user.id,
+        completedAt: new Date(),
+        payments: {
+          create: normalizedPayments.map((p) => ({
+            method: p.method,
+            amount: p.amount,
+            reference: p.reference,
+            userId: session.user.id,
+          })),
+        },
+      },
+      include: {
+        payments: true,
+        user: { select: { name: true } },
+        room: true,
+        booking: { include: { guest: true } },
+      },
+    });
+
+    return { order, charge, guest, bookingId };
+  });
+
+  await logActivity("ROOM_SALE_COMPLETED", "Order", result.order.id, result.order.orderNumber, {
+    roomId: data.roomId,
+    roomNumber: room.number,
+    nights,
+    total,
+    customer: result.guest.fullName,
+  });
+  await logActivity("ROOM_ACCOMMODATION_ADDED", "RoomCharge", result.charge.id, result.charge.description, {
+    roomId: data.roomId,
+    nights,
+    total,
+  });
+
+  for (const p of result.order.payments) {
+    await logActivity(
+      isSplit ? "SPLIT_PAYMENT_RECORDED" : "ROOM_PAYMENT_RECORDED",
+      "Payment",
+      p.id,
+      `${result.order.orderNumber} — ${p.method} ${p.amount}`,
+      { method: p.method, amount: p.amount }
+    );
+  }
+
+  revalidateRoomBilling(data.roomId);
+  revalidatePath("/bookings");
+  revalidatePath("/orders");
+  revalidatePath("/dashboard");
+  revalidatePath("/reports");
+  return result.order;
+}
+
+/** Customer left — settle folio and mark room for cleaning. */
+export async function releaseRoom(data: { roomId: string; adminOverride?: boolean }) {
+  const session = await getSession();
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+  requireRoomBillingAccess(session.user.role);
+
+  const account = await getRoomAccount(data.roomId);
+  if (!account.booking) throw new AppError("No active room stay to release.");
+
+  if (account.balanceDue > 0.009) {
+    if (data.adminOverride && session.user.role === "ADMIN") {
+      // allow release with outstanding balance
+    } else {
+      throw new AppError(
+        `Cannot release room — balance due ${account.balanceDue.toFixed(2)}. Collect payment first.`
+      );
+    }
+  }
+
+  const order = await checkoutRoom({
+    roomId: data.roomId,
+    adminOverride: data.adminOverride,
+  });
+
+  await logActivity("ROOM_RELEASED", "Room", data.roomId, account.room.number, {
+    orderId: order.id,
+    total: order.total,
+  });
+
+  return order;
+}
+
 function revalidateRoomBilling(roomId?: string) {
   revalidatePath("/rooms");
   revalidatePath("/room-charges");
@@ -408,7 +631,7 @@ export async function getRoomAccount(roomId: string) {
     where: {
       bookingId: booking.id,
       status: OrderStatus.COMPLETED,
-      notes: { in: [FOLIO_PAYMENT_NOTE, ROOM_CHECKOUT_NOTE] },
+      notes: { in: [...ROOM_PAYMENT_ORDER_NOTES] },
     },
     include: { payments: true, user: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
@@ -875,7 +1098,7 @@ export async function getRoomCheckoutInvoice(orderId: string) {
     where: {
       bookingId: order.bookingId ?? undefined,
       status: OrderStatus.COMPLETED,
-      notes: { in: [FOLIO_PAYMENT_NOTE, ROOM_CHECKOUT_NOTE] },
+      notes: { in: [...ROOM_PAYMENT_ORDER_NOTES] },
     },
     include: { payments: true },
     orderBy: { createdAt: "asc" },
@@ -925,12 +1148,19 @@ export async function getTodayRoomBillingStats() {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const [checkoutOrders, todayCharges, outstanding] = await Promise.all([
+  const [checkoutOrders, walkInSales, todayCharges, outstanding] = await Promise.all([
     prisma.order.findMany({
       where: {
         createdAt: { gte: today, lt: tomorrow },
         status: OrderStatus.COMPLETED,
         notes: ROOM_CHECKOUT_NOTE,
+      },
+    }),
+    prisma.order.findMany({
+      where: {
+        createdAt: { gte: today, lt: tomorrow },
+        status: OrderStatus.COMPLETED,
+        notes: WALK_IN_ROOM_SALE_NOTE,
       },
     }),
     prisma.roomCharge.findMany({
@@ -943,7 +1173,9 @@ export async function getTodayRoomBillingStats() {
   ]);
 
   return {
-    todayRoomRevenue: checkoutOrders.reduce((s, o) => s + o.total, 0),
+    todayRoomRevenue:
+      checkoutOrders.reduce((s, o) => s + o.total, 0) +
+      walkInSales.reduce((s, o) => s + o.total, 0),
     todayPostedCharges: todayCharges.reduce((s, c) => s + c.total, 0),
     outstandingBalances: outstanding.reduce((s, r) => s + r.balance, 0),
     outstandingCount: outstanding.length,

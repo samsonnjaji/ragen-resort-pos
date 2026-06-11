@@ -23,14 +23,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createRoom, updateRoom, updateRoomStatus, deleteRoom } from "@/lib/actions/rooms";
-import { quickCheckInWithRoomRate } from "@/lib/actions/room-billing";
+import { completeWalkInRoomSale } from "@/lib/actions/room-billing";
 import { formatCurrency, ROOM_STATUS_COLORS, ROOM_STATUS_LABELS } from "@/lib/utils";
-import { isRoomBillingDisabled } from "@/lib/room-billing";
+import { accommodationDescription, isRoomBillingDisabled } from "@/lib/room-billing";
 import { getErrorMessage } from "@/lib/app-error";
 import { useToast } from "@/hooks/use-toast";
 import { useRequireConnection } from "@/hooks/use-require-connection";
-import { Plus, Pencil, Trash2, Receipt, BedDouble } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, BedDouble, ShoppingCart } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PaymentDialog, PaymentLineDraft } from "@/components/pos/payment-dialog";
+import { RoomSaleReceipt } from "@/components/rooms/room-sale-receipt";
 import { BookingStatus, RoomStatus } from "@prisma/client";
 
 interface RoomsClientProps {
@@ -50,20 +52,32 @@ interface RoomsClientProps {
     }>;
   }>;
   folios: Record<string, { guestName: string; nightsStayed: number; balanceDue: number }>;
-  guests: Array<{ id: string; fullName: string; phone: string }>;
+  settings: {
+    businessName: string;
+    businessAddress: string;
+    phone: string;
+    receiptFooter: string;
+    currency: string;
+  };
 }
 
-export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
+export function RoomsClient({ rooms, folios, settings }: RoomsClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [quickBillRoom, setQuickBillRoom] = useState<RoomsClientProps["rooms"][0] | null>(null);
-  const [quickGuestId, setQuickGuestId] = useState("");
-  const [quickNights, setQuickNights] = useState(1);
+  const [saleRoom, setSaleRoom] = useState<RoomsClientProps["rooms"][0] | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [saleNights, setSaleNights] = useState(1);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [saleReceipt, setSaleReceipt] = useState<Awaited<ReturnType<typeof completeWalkInRoomSale>> | null>(null);
+  const [receiptNights, setReceiptNights] = useState(1);
   const [editing, setEditing] = useState<RoomsClientProps["rooms"][0] | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
   const router = useRouter();
+
+  const saleTotal = saleRoom ? saleRoom.pricePerNight * saleNights : 0;
 
   const handleRoomCardClick = (room: RoomsClientProps["rooms"][0]) => {
     if (isRoomBillingDisabled(room.status)) return;
@@ -75,34 +89,31 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
 
     if (room.status === RoomStatus.AVAILABLE || room.status === RoomStatus.RESERVED) {
       const booking = room.bookings[0];
-      setQuickBillRoom(room);
-      setQuickGuestId(booking?.guest.id ?? "");
-      setQuickNights(1);
+      setSaleRoom(room);
+      setCustomerName(booking?.guest.fullName ?? "");
+      setCustomerPhone("");
+      setSaleNights(1);
     }
   };
 
-  const handleQuickBillSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickBillRoom || blockIfOffline("Adding room to bill")) return;
-    if (!quickGuestId) {
-      toast({ title: "Select a guest", variant: "destructive" });
-      return;
-    }
+  const handlePayRoom = async (payments: PaymentLineDraft[]) => {
+    if (!saleRoom || blockIfOffline("Processing room sale")) return;
     setLoading(true);
     try {
-      const booking = quickBillRoom.bookings[0];
-      const result = await quickCheckInWithRoomRate({
-        roomId: quickBillRoom.id,
-        guestId: quickGuestId,
-        nights: quickNights,
+      const booking = saleRoom.bookings[0];
+      const order = await completeWalkInRoomSale({
+        roomId: saleRoom.id,
+        nights: saleNights,
+        customerName: customerName.trim() || undefined,
+        customerPhone: customerPhone.trim() || undefined,
+        payments,
         bookingId: booking?.status === BookingStatus.RESERVED ? booking.id : undefined,
       });
-      toast({
-        title: "Room added to bill",
-        description: `Room ${quickBillRoom.number} — ${formatCurrency(quickBillRoom.pricePerNight * quickNights)} accommodation`,
-      });
-      setQuickBillRoom(null);
-      router.push(`/rooms/${result.roomId}`);
+      toast({ title: "Room sale complete", description: `Room ${saleRoom.number} is now occupied` });
+      setPaymentOpen(false);
+      setReceiptNights(saleNights);
+      setSaleRoom(null);
+      setSaleReceipt(order);
       router.refresh();
     } catch (err) {
       toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
@@ -143,7 +154,7 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
 
   return (
     <div>
-      <PageHeader title="Rooms" description="Click a room to add its rate to the bill — like POS products">
+      <PageHeader title="Sell Room" description="Click an available room to sell — like POS products">
         <Button variant="gold" onClick={() => { setEditing(null); setDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-1" /> Add Room
         </Button>
@@ -186,7 +197,7 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
                   <Badge variant="outline" className="text-xs">{room.type}</Badge>
                 </div>
                 <p className="text-lg font-semibold text-gold">{formatCurrency(room.pricePerNight)}</p>
-                <p className="text-xs text-muted-foreground">Room Rate / night</p>
+                <p className="text-xs text-muted-foreground">Room Rate</p>
                 <Badge className="mt-2 text-xs" variant="secondary">
                   {ROOM_STATUS_LABELS[room.status]}
                 </Badge>
@@ -204,7 +215,7 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
                   </div>
                 )}
                 {billingDisabled && (
-                  <p className="text-xs text-muted-foreground mt-2">Billing unavailable</p>
+                  <p className="text-xs text-muted-foreground mt-2">Not available for sale</p>
                 )}
                 {room.status === RoomStatus.OCCUPIED && (
                   <Button
@@ -221,7 +232,7 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
                 )}
                 {(room.status === RoomStatus.AVAILABLE || room.status === RoomStatus.RESERVED) && (
                   <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
-                    <BedDouble className="h-3 w-3" /> Click to add room rate
+                    <ShoppingCart className="h-3 w-3" /> Click to sell room
                   </p>
                 )}
                 <Select
@@ -259,49 +270,107 @@ export function RoomsClient({ rooms, folios, guests }: RoomsClientProps) {
         })}
       </div>
 
-      {/* Quick check-in / add room rate */}
-      <Dialog open={!!quickBillRoom} onOpenChange={(o) => !o && setQuickBillRoom(null)}>
-        <DialogContent onClick={(e) => e.stopPropagation()}>
+      {/* Room Sale — POS-style cart */}
+      <Dialog open={!!saleRoom} onOpenChange={(o) => !o && setSaleRoom(null)}>
+        <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle className="font-serif">
-              Add Room to Bill — {quickBillRoom?.number}
+            <DialogTitle className="font-serif flex items-center gap-2">
+              <BedDouble className="h-5 w-5 text-emerald-500" />
+              Room Sale — {saleRoom?.number}
             </DialogTitle>
           </DialogHeader>
-          {quickBillRoom && (
-            <form onSubmit={handleQuickBillSubmit} className="space-y-4">
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3 text-sm">
-                <p className="font-medium">Room Rate: {formatCurrency(quickBillRoom.pricePerNight)} / night</p>
-                <p className="text-muted-foreground text-xs mt-1">{quickBillRoom.type}</p>
+          {saleRoom && (
+            <div className="space-y-4">
+              <div className="rounded-lg border-2 border-emerald-500/40 bg-emerald-950/10 p-3">
+                <p className="font-medium">{accommodationDescription(saleRoom.number)}</p>
+                <div className="flex justify-between text-sm mt-2">
+                  <span className="text-muted-foreground">Nights: {saleNights}</span>
+                  <span className="text-muted-foreground">Rate: {formatCurrency(saleRoom.pricePerNight)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-gold mt-2 pt-2 border-t border-emerald-500/20">
+                  <span>Total</span>
+                  <span>{formatCurrency(saleTotal)}</span>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Guest</Label>
-                <Select value={quickGuestId} onValueChange={setQuickGuestId} required>
-                  <SelectTrigger><SelectValue placeholder="Select guest" /></SelectTrigger>
-                  <SelectContent>
-                    {guests.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>{g.fullName} — {g.phone}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Customer name (optional)</Label>
+                  <Input
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Walk-in Guest"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Phone (optional)</Label>
+                  <Input
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="07..."
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Nights</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Nights</Label>
                 <Input
                   type="number"
                   min={1}
-                  value={quickNights}
-                  onChange={(e) => setQuickNights(Math.max(1, Number(e.target.value)))}
-                  required
+                  value={saleNights}
+                  onChange={(e) => setSaleNights(Math.max(1, Number(e.target.value)))}
                 />
               </div>
-              <div className="flex justify-between font-semibold text-gold border-t pt-3">
-                <span>Accommodation Total</span>
-                <span>{formatCurrency(quickBillRoom.pricePerNight * quickNights)}</span>
-              </div>
-              <Button type="submit" variant="gold" className="w-full" disabled={loading || offlineDisabled || !quickGuestId}>
-                {quickBillRoom.status === RoomStatus.RESERVED ? "Check In & Add Room Rate" : "Check In & Add Room to Bill"}
+
+              <Button
+                variant="gold"
+                className="w-full h-12 text-base"
+                disabled={loading || offlineDisabled}
+                onClick={() => setPaymentOpen(true)}
+              >
+                Pay Room — {formatCurrency(saleTotal)}
               </Button>
-            </form>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <PaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        orderTotal={saleTotal}
+        loading={loading}
+        disabled={offlineDisabled}
+        onComplete={handlePayRoom}
+      />
+
+      {/* Receipt after sale */}
+      <Dialog open={!!saleReceipt} onOpenChange={(o) => !o && setSaleReceipt(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto print:max-w-none">
+          <DialogHeader className="print:hidden">
+            <DialogTitle className="font-serif">Room Sale Receipt</DialogTitle>
+          </DialogHeader>
+          {saleReceipt && saleReceipt.room && saleReceipt.booking && (
+            <>
+              <RoomSaleReceipt
+                orderNumber={saleReceipt.orderNumber}
+                completedAt={saleReceipt.completedAt ?? new Date()}
+                cashierName={saleReceipt.user.name}
+                roomNumber={saleReceipt.room.number}
+                roomType={saleReceipt.room.type}
+                customerName={saleReceipt.booking.guest.fullName}
+                customerPhone={saleReceipt.booking.guest.phone}
+                nights={receiptNights}
+                unitPrice={saleReceipt.room.pricePerNight}
+                total={saleReceipt.total}
+                changeGiven={saleReceipt.changeGiven}
+                payments={saleReceipt.payments}
+                settings={settings}
+              />
+              <div className="flex gap-2 print:hidden">
+                <Button variant="gold" className="flex-1" onClick={() => window.print()}>Print Receipt</Button>
+                <Button variant="outline" className="flex-1" onClick={() => setSaleReceipt(null)}>Close</Button>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>

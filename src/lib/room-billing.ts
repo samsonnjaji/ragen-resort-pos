@@ -2,6 +2,14 @@ import { RoomChargeType } from "@prisma/client";
 
 export const FOLIO_PAYMENT_NOTE = "FOLIO_PAYMENT";
 export const ROOM_CHECKOUT_NOTE = "ROOM_CHECKOUT";
+export const WALK_IN_ROOM_SALE_NOTE = "WALK_IN_ROOM_SALE";
+
+/** Order notes that count as payments against a room folio. */
+export const ROOM_PAYMENT_ORDER_NOTES = [
+  FOLIO_PAYMENT_NOTE,
+  ROOM_CHECKOUT_NOTE,
+  WALK_IN_ROOM_SALE_NOTE,
+] as const;
 
 export const ROOM_CHARGE_CATEGORIES: { value: RoomChargeType; label: string }[] = [
   { value: "FOOD", label: "Food" },

@@ -25,8 +25,8 @@ import {
   addManualRoomCharge,
   addProductRoomCharge,
   addRoomAccommodation,
-  checkoutRoom,
   recordRoomPayment,
+  releaseRoom,
   updateRoomAccommodation,
   updateRoomBillingCharge,
   voidRoomBillingCharge,
@@ -50,6 +50,7 @@ import {
   BedDouble,
   Minus,
   Plus as PlusIcon,
+  DoorOpen,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PaymentDialog, PaymentLineDraft } from "@/components/pos/payment-dialog";
@@ -79,7 +80,7 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
   const [voidId, setVoidId] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [invoiceOrder, setInvoiceOrder] = useState<Awaited<ReturnType<typeof checkoutRoom>> | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<Awaited<ReturnType<typeof releaseRoom>> | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [productQty, setProductQty] = useState(1);
@@ -209,15 +210,15 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
     }
   };
 
-  const handleCheckout = async (payments: PaymentLineDraft[]) => {
-    if (blockIfOffline("Checking out room")) return;
+  const handleReleaseRoom = async (payments?: PaymentLineDraft[]) => {
+    if (blockIfOffline("Releasing room")) return;
     setLoading(true);
     try {
-      const order = await checkoutRoom({
-        roomId: room.id,
-        payments: account.balanceDue > 0 ? payments : undefined,
-      });
-      toast({ title: "Checkout complete" });
+      if (account.balanceDue > 0.009 && payments?.length) {
+        await recordRoomPayment({ roomId: room.id, payments });
+      }
+      const order = await releaseRoom({ roomId: room.id });
+      toast({ title: "Room released", description: "Customer has left — room marked for cleaning" });
       setCheckoutOpen(false);
       setInvoiceOrder(order);
       router.refresh();
@@ -288,28 +289,40 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
               <Button
                 variant="default"
                 className="bg-emerald-700 hover:bg-emerald-800"
-                onClick={async () => {
+                onClick={() => {
                   if (account.balanceDue > 0.009) {
                     setCheckoutOpen(true);
                     return;
                   }
-                  if (blockIfOffline("Checking out room")) return;
-                  setLoading(true);
-                  try {
-                    const order = await checkoutRoom({ roomId: room.id });
-                    toast({ title: "Checkout complete" });
-                    setInvoiceOrder(order);
-                    router.refresh();
-                  } catch (err) {
-                    toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
-                  } finally {
-                    setLoading(false);
-                  }
+                  handleReleaseRoom();
                 }}
                 disabled={offlineDisabled || loading}
               >
-                <LogOut className="h-4 w-4 mr-1" /> Checkout
+                <DoorOpen className="h-4 w-4 mr-1" /> Release Room
               </Button>
+              {isAdmin && account.balanceDue > 0.009 && (
+                <Button
+                  variant="outline"
+                  className="border-destructive text-destructive"
+                  disabled={offlineDisabled || loading}
+                  onClick={async () => {
+                    if (blockIfOffline("Force releasing room")) return;
+                    setLoading(true);
+                    try {
+                      const order = await releaseRoom({ roomId: room.id, adminOverride: true });
+                      toast({ title: "Room force-released (admin)" });
+                      setInvoiceOrder(order);
+                      router.refresh();
+                    } catch (err) {
+                      toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  Force Release (Admin)
+                </Button>
+              )}
             </div>
           )}
 
@@ -608,7 +621,7 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
         orderTotal={account.balanceDue}
         loading={loading}
         disabled={offlineDisabled || (account.balanceDue <= 0 && false)}
-        onComplete={handleCheckout}
+        onComplete={handleReleaseRoom}
       />
 
       {/* Invoice after checkout */}
