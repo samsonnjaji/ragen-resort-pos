@@ -24,8 +24,10 @@ import {
 import {
   addManualRoomCharge,
   addProductRoomCharge,
+  addRoomAccommodation,
   checkoutRoom,
   recordRoomPayment,
+  updateRoomAccommodation,
   updateRoomBillingCharge,
   voidRoomBillingCharge,
 } from "@/lib/actions/room-billing";
@@ -45,6 +47,9 @@ import {
   Receipt,
   LogOut,
   Search,
+  BedDouble,
+  Minus,
+  Plus as PlusIcon,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PaymentDialog, PaymentLineDraft } from "@/components/pos/payment-dialog";
@@ -78,6 +83,9 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
   const [productSearch, setProductSearch] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [productQty, setProductQty] = useState(1);
+  const [editAccommodation, setEditAccommodation] = useState(false);
+  const [accNights, setAccNights] = useState(account.accommodationCharge?.quantity ?? account.nightsStayed);
+  const [accRate, setAccRate] = useState(account.accommodationCharge?.unitPrice ?? room.pricePerNight);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { blockIfOffline, disabled: offlineDisabled } = useRequireConnection();
@@ -90,6 +98,37 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
   }, [products, productSearch]);
 
   const canBill = booking && room.status === RoomStatus.OCCUPIED;
+  const accommodationCharge = account.accommodationCharge;
+  const otherCharges = account.otherCharges ?? account.charges.filter((c) => c.type !== "ACCOMMODATION");
+
+  const handleAddRoomRate = async () => {
+    if (blockIfOffline("Adding room rate")) return;
+    setLoading(true);
+    try {
+      await addRoomAccommodation({ roomId: room.id });
+      toast({ title: "Room rate added to bill" });
+      router.refresh();
+    } catch (err) {
+      toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateAccommodation = async () => {
+    if (blockIfOffline("Updating accommodation")) return;
+    setLoading(true);
+    try {
+      await updateRoomAccommodation({ roomId: room.id, nights: accNights, unitPrice: accRate });
+      toast({ title: "Accommodation updated" });
+      setEditAccommodation(false);
+      router.refresh();
+    } catch (err) {
+      toast({ title: "Error", description: getErrorMessage(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddProduct = async () => {
     if (!selectedProduct || blockIfOffline("Adding product charge")) return;
@@ -194,8 +233,8 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
   return (
     <div>
       <PageHeader
-        title={`Room ${room.number} — Guest Folio`}
-        description={booking ? `${booking.guest.fullName}'s account` : "No active booking"}
+        title={`Room ${room.number} — Room Bill`}
+        description={booking ? `${booking.guest.fullName}'s folio` : "No active booking"}
       >
         <Button variant="outline" asChild>
           <Link href="/rooms"><ArrowLeft className="h-4 w-4 mr-1" /> Back to Rooms</Link>
@@ -213,14 +252,14 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
             </CardHeader>
             <CardContent className="grid sm:grid-cols-2 gap-3 text-sm">
               <Info label="Type" value={room.type} />
-              <Info label="Rate/night" value={formatCurrency(room.pricePerNight)} />
+              <Info label="Room Rate" value={`${formatCurrency(room.pricePerNight)} / night`} />
               {booking ? (
                 <>
                   <Info label="Guest" value={booking.guest.fullName} />
                   <Info label="Phone" value={booking.guest.phone} />
                   <Info label="Check-in" value={formatDate(booking.checkIn)} />
                   <Info label="Expected checkout" value={formatDate(booking.checkOut)} />
-                  <Info label="Nights stayed" value={String(account.nightsStayed)} />
+                  <Info label="Nights" value={String(account.nightsStayed)} />
                 </>
               ) : (
                 <p className="sm:col-span-2 text-muted-foreground">No checked-in guest</p>
@@ -230,6 +269,11 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
 
           {canBill && (
             <div className="flex flex-wrap gap-2">
+              {!account.hasAccommodation && (
+                <Button variant="gold" onClick={handleAddRoomRate} disabled={offlineDisabled || loading}>
+                  <BedDouble className="h-4 w-4 mr-1" /> Add Room Rate
+                </Button>
+              )}
               <Button variant="gold" onClick={() => setProductDialog(true)} disabled={offlineDisabled}>
                 <Package className="h-4 w-4 mr-1" /> Add Product
               </Button>
@@ -269,22 +313,78 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
             </div>
           )}
 
-          <Card>
+          <Card className="border-emerald-500/30">
             <CardHeader>
               <CardTitle className="font-serif text-lg flex items-center gap-2">
-                <Receipt className="h-5 w-5 text-emerald-600" /> Charges
+                <Receipt className="h-5 w-5 text-emerald-600" /> Room Bill Cart
               </CardTitle>
             </CardHeader>
             <CardContent>
               {!canBill ? (
                 <p className="text-muted-foreground text-sm py-4 text-center">
-                  Billing is only available for occupied rooms with an active check-in.
+                  Room Bill is only available for occupied rooms with an active check-in.
                 </p>
-              ) : account.charges.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">No posted charges yet</p>
               ) : (
                 <div className="space-y-2">
-                  {account.charges.map((charge) => (
+                  {/* Accommodation line — POS-style */}
+                  {accommodationCharge ? (
+                    <div className="p-3 rounded-lg border-2 border-emerald-500/40 bg-emerald-950/10">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium">{accommodationCharge.description}</p>
+                          <Badge variant="outline" className="text-xs mt-1">Accommodation</Badge>
+                          {!editAccommodation ? (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Nights: {accommodationCharge.quantity} × {formatCurrency(accommodationCharge.unitPrice)} Room Rate
+                            </p>
+                          ) : (
+                            <div className="flex gap-2 mt-2 items-center">
+                              <Label className="text-xs shrink-0">Nights</Label>
+                              <div className="flex items-center gap-1">
+                                <Button type="button" size="icon" variant="outline" className="h-7 w-7" onClick={() => setAccNights(Math.max(1, accNights - 1))}>
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <Input type="number" min={1} value={accNights} onChange={(e) => setAccNights(Math.max(1, Number(e.target.value)))} className="h-7 w-14 text-center" />
+                                <Button type="button" size="icon" variant="outline" className="h-7 w-7" onClick={() => setAccNights(accNights + 1)}>
+                                  <PlusIcon className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <Input type="number" min={0} value={accRate} onChange={(e) => setAccRate(Number(e.target.value))} className="h-7 w-24" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="font-bold text-gold text-lg">{formatCurrency(accommodationCharge.total)}</span>
+                          <div className="flex gap-1">
+                            {editAccommodation ? (
+                              <>
+                                <Button size="sm" variant="gold" className="h-7" disabled={loading} onClick={handleUpdateAccommodation}>Save</Button>
+                                <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditAccommodation(false)}>Cancel</Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={offlineDisabled} onClick={() => { setAccNights(accommodationCharge.quantity); setAccRate(accommodationCharge.unitPrice); setEditAccommodation(true); }}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={offlineDisabled} onClick={() => setVoidId(accommodationCharge.id)}>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-lg border border-dashed text-center text-sm text-muted-foreground">
+                      <p>No room rate on bill yet</p>
+                      <Button variant="gold" size="sm" className="mt-2" onClick={handleAddRoomRate} disabled={offlineDisabled || loading}>
+                        Add Room Rate — {formatCurrency(room.pricePerNight)}/night
+                      </Button>
+                    </div>
+                  )}
+
+                  {otherCharges.map((charge) => (
                     <div
                       key={charge.id}
                       className="flex items-center justify-between gap-2 p-3 rounded-lg border bg-card hover:bg-muted/30"
@@ -294,33 +394,25 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
                         <div className="flex items-center gap-2 mt-0.5">
                           <Badge variant="outline" className="text-xs">{charge.type}</Badge>
                           <span className="text-xs text-muted-foreground">
-                            {charge.quantity} × {formatCurrency(charge.unitPrice)}
+                            Qty: {charge.quantity} × {formatCurrency(charge.unitPrice)}
                           </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="font-semibold text-gold">{formatCurrency(charge.total)}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8"
-                          disabled={offlineDisabled}
-                          onClick={() => setEditCharge(charge)}
-                        >
+                        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={offlineDisabled} onClick={() => setEditCharge(charge)}>
                           <Pencil className="h-3 w-3" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-destructive"
-                          disabled={offlineDisabled}
-                          onClick={() => setVoidId(charge.id)}
-                        >
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" disabled={offlineDisabled} onClick={() => setVoidId(charge.id)}>
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
                   ))}
+
+                  {account.hasAccommodation && otherCharges.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center pt-2">Add products or manual charges above</p>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -328,20 +420,20 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
         </div>
 
         <div className="space-y-4">
-          <Card className="border-gold/40 bg-gradient-to-br from-emerald-950/20 to-amber-950/10">
+          <Card className="border-gold/40 bg-gradient-to-br from-emerald-950/20 to-amber-950/10 sticky top-4">
             <CardHeader>
-              <CardTitle className="font-serif text-lg text-gold">Account Summary</CardTitle>
+              <CardTitle className="font-serif text-lg text-gold">Room Bill</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <SummaryRow label="Accommodation" value={formatCurrency(account.accommodationSubtotal)} />
-              <SummaryRow label="Posted charges" value={formatCurrency(account.postedChargesSubtotal)} />
+              <SummaryRow label="Other charges" value={formatCurrency(account.postedChargesSubtotal)} />
               <div className="border-t pt-2">
                 <SummaryRow label="Subtotal" value={formatCurrency(account.grandTotal ?? 0)} bold />
               </div>
-              <SummaryRow label="Payments made" value={`− ${formatCurrency(account.paymentsMade)}`} className="text-emerald-400" />
+              <SummaryRow label="Paid" value={`− ${formatCurrency(account.paymentsMade)}`} className="text-emerald-400" />
               <div className="border-t border-gold/30 pt-3">
                 <SummaryRow
-                  label="Balance due"
+                  label="Balance Due"
                   value={formatCurrency(account.balanceDue)}
                   bold
                   className="text-gold text-lg"

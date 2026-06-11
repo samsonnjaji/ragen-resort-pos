@@ -24,6 +24,23 @@ export function calcAccommodationSubtotal(nights: number, ratePerNight: number):
   return Math.round(nights * ratePerNight * 100) / 100;
 }
 
+export function calcBookedNights(checkIn: Date, checkOut: Date): number {
+  const ms = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+  return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
+export function accommodationDescription(roomNumber: string): string {
+  return `Room ${roomNumber} Accommodation`;
+}
+
+export function isRoomBillingDisabled(status: string): boolean {
+  return status === "CLEANING" || status === "MAINTENANCE";
+}
+
+export function isAccommodationCharge(type: RoomChargeType): boolean {
+  return type === "ACCOMMODATION";
+}
+
 export function mapProductCategoryToChargeType(categoryType: string): RoomChargeType {
   switch (categoryType) {
     case "FOOD":

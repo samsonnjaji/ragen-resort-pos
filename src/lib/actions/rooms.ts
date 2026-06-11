@@ -160,14 +160,9 @@ export async function createBooking(data: {
   const room = await prisma.room.findUnique({ where: { id: data.roomId } });
   if (!room) throw new Error("Room not found");
 
-  const nights = Math.ceil(
-    (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / (1000 * 60 * 60 * 24)
-  );
-  const totalAmount = nights * room.pricePerNight;
-
   const booking = await prisma.$transaction(async (tx) => {
     const b = await tx.booking.create({
-      data: { ...data, totalAmount, status: BookingStatus.RESERVED },
+      data: { ...data, totalAmount: 0, status: BookingStatus.RESERVED },
       include: { guest: true, room: true },
     });
 
@@ -190,8 +185,12 @@ export async function checkInBooking(id: string) {
   if (!["ADMIN", "ROOM_MANAGER"].includes(session?.user?.role || "")) {
     throw new Error("Unauthorized");
   }
+  if (!session?.user?.id) throw new AppError("Unauthorized");
 
-  const booking = await prisma.booking.findUnique({ where: { id } });
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { room: true },
+  });
   if (!booking) throw new Error("Booking not found");
 
   await prisma.$transaction(async (tx) => {
@@ -205,9 +204,13 @@ export async function checkInBooking(id: string) {
     });
   });
 
+  const { ensureAccommodationForBooking } = await import("./room-billing");
+  await ensureAccommodationForBooking(id, session.user.id);
+
   await logActivity("CHECK_IN", "Booking", id);
   revalidatePath("/bookings");
   revalidatePath("/rooms");
+  revalidatePath(`/rooms/${booking.roomId}`);
 }
 
 export async function checkOutBooking(id: string) {

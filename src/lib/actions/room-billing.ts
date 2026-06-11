@@ -19,10 +19,13 @@ import {
   validateAndNormalizePayments,
 } from "@/lib/payments";
 import {
+  accommodationDescription,
   calcAccommodationSubtotal,
+  calcBookedNights,
   calcNightsStayed,
   FOLIO_PAYMENT_NOTE,
   isProductSellable,
+  isRoomBillingDisabled,
   mapProductCategoryToChargeType,
   ROOM_CHECKOUT_NOTE,
 } from "@/lib/room-billing";
@@ -72,19 +75,278 @@ async function sumBookingPayments(bookingId: string) {
   return Math.round(paid * 100) / 100;
 }
 
+function getActiveAccommodationCharge(
+  charges: { id: string; type: RoomChargeType; checkoutOrderId: string | null; voidedAt?: Date | null }[]
+) {
+  return charges.find(
+    (c) => c.type === RoomChargeType.ACCOMMODATION && !c.checkoutOrderId && !c.voidedAt
+  );
+}
+
 function computeFolioTotals(booking: {
   checkIn: Date;
   checkOut: Date;
   room: { pricePerNight: number };
-  roomCharges: { total: number; checkoutOrderId: string | null }[];
+  roomCharges: {
+    total: number;
+    checkoutOrderId: string | null;
+    type: RoomChargeType;
+    quantity: number;
+  }[];
 }) {
-  const nightsStayed = calcNightsStayed(booking.checkIn, booking.checkOut);
-  const accommodationSubtotal = calcAccommodationSubtotal(nightsStayed, booking.room.pricePerNight);
-  const postedChargesSubtotal = booking.roomCharges
-    .filter((c) => !c.checkoutOrderId)
+  const activeCharges = booking.roomCharges.filter((c) => !c.checkoutOrderId);
+  const accommodation = activeCharges.find((c) => c.type === RoomChargeType.ACCOMMODATION);
+  const accommodationSubtotal = accommodation?.total ?? 0;
+  const nightsStayed =
+    accommodation?.quantity ?? calcNightsStayed(booking.checkIn, booking.checkOut);
+  const postedChargesSubtotal = activeCharges
+    .filter((c) => c.type !== RoomChargeType.ACCOMMODATION)
     .reduce((s, c) => s + c.total, 0);
   const grandTotal = Math.round((accommodationSubtotal + postedChargesSubtotal) * 100) / 100;
-  return { nightsStayed, accommodationSubtotal, postedChargesSubtotal, grandTotal };
+  return {
+    nightsStayed,
+    accommodationSubtotal,
+    postedChargesSubtotal,
+    grandTotal,
+    hasAccommodation: !!accommodation,
+  };
+}
+
+export async function ensureAccommodationForBooking(bookingId: string, userId: string) {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: {
+      room: true,
+      roomCharges: {
+        where: { voidedAt: null, type: RoomChargeType.ACCOMMODATION, checkoutOrderId: null },
+      },
+    },
+  });
+  if (!booking) throw new AppError("Booking not found.");
+  if (booking.status !== BookingStatus.CHECKED_IN) {
+    throw new AppError("Guest must be checked in to add room rate.");
+  }
+  if (isRoomBillingDisabled(booking.room.status)) {
+    throw new AppError("Cannot add room rate while room is cleaning or under maintenance.");
+  }
+
+  const existing = getActiveAccommodationCharge(booking.roomCharges);
+  if (existing) return existing;
+
+  const nights = calcBookedNights(booking.checkIn, booking.checkOut);
+  const unitPrice = booking.room.pricePerNight;
+  const total = calcAccommodationSubtotal(nights, unitPrice);
+
+  const charge = await prisma.roomCharge.create({
+    data: {
+      bookingId: booking.id,
+      roomId: booking.roomId,
+      type: RoomChargeType.ACCOMMODATION,
+      description: accommodationDescription(booking.room.number),
+      quantity: nights,
+      unitPrice,
+      total,
+      userId,
+    },
+  });
+
+  await logActivity("ROOM_ACCOMMODATION_ADDED", "RoomCharge", charge.id, charge.description, {
+    roomId: booking.roomId,
+    nights,
+    unitPrice,
+    total,
+  });
+
+  return charge;
+}
+
+export async function addRoomAccommodation(data: { roomId: string; nights?: number }) {
+  const session = await getSession();
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+  requireRoomBillingAccess(session.user.role);
+
+  const booking = await getCheckedInBookingForRoom(data.roomId);
+  const existing = getActiveAccommodationCharge(booking.roomCharges);
+  if (existing) {
+    return existing;
+  }
+
+  const nights = data.nights ?? calcBookedNights(booking.checkIn, booking.checkOut);
+  const unitPrice = booking.room.pricePerNight;
+  const total = calcAccommodationSubtotal(nights, unitPrice);
+
+  const charge = await prisma.roomCharge.create({
+    data: {
+      bookingId: booking.id,
+      roomId: data.roomId,
+      type: RoomChargeType.ACCOMMODATION,
+      description: accommodationDescription(booking.room.number),
+      quantity: nights,
+      unitPrice,
+      total,
+      userId: session.user.id,
+    },
+  });
+
+  await logActivity("ROOM_ACCOMMODATION_ADDED", "RoomCharge", charge.id, charge.description, {
+    roomId: data.roomId,
+    nights,
+    unitPrice,
+    total,
+  });
+
+  revalidateRoomBilling(data.roomId);
+  return charge;
+}
+
+export async function updateRoomAccommodation(data: {
+  roomId: string;
+  nights: number;
+  unitPrice?: number;
+}) {
+  const session = await getSession();
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+  requireRoomBillingAccess(session.user.role);
+
+  if (data.nights < 1) throw new AppError("Nights must be at least 1.");
+
+  const booking = await getCheckedInBookingForRoom(data.roomId);
+  const existing = getActiveAccommodationCharge(booking.roomCharges);
+  if (!existing) throw new AppError("No room rate on this bill to update.");
+
+  const full = await prisma.roomCharge.findUnique({ where: { id: existing.id } });
+  if (!full || full.voidedAt) throw new AppError("Room rate charge not found.");
+  if (full.checkoutOrderId) throw new AppError("Cannot edit a settled room rate.");
+
+  const unitPrice = data.unitPrice ?? full.unitPrice;
+  const charge = await prisma.roomCharge.update({
+    where: { id: full.id },
+    data: {
+      quantity: data.nights,
+      unitPrice,
+      total: calcAccommodationSubtotal(data.nights, unitPrice),
+    },
+  });
+
+  await logActivity("ROOM_ACCOMMODATION_UPDATED", "RoomCharge", charge.id, charge.description, {
+    roomId: data.roomId,
+    nights: data.nights,
+    unitPrice,
+    total: charge.total,
+  });
+
+  revalidateRoomBilling(data.roomId);
+  return charge;
+}
+
+export async function quickCheckInWithRoomRate(data: {
+  roomId: string;
+  guestId: string;
+  nights: number;
+  bookingId?: string;
+}) {
+  const session = await getSession();
+  if (!session?.user?.id) throw new AppError("Unauthorized");
+  requireRoomBillingAccess(session.user.role);
+
+  const nights = Math.max(1, data.nights);
+  const room = await prisma.room.findUnique({ where: { id: data.roomId } });
+  if (!room) throw new AppError("Room not found.");
+  if (isRoomBillingDisabled(room.status)) {
+    throw new AppError("Room is not available for billing (cleaning or maintenance).");
+  }
+
+  let bookingId: string;
+
+  if (room.status === RoomStatus.OCCUPIED) {
+    const booking = await prisma.booking.findFirst({
+      where: { roomId: data.roomId, status: BookingStatus.CHECKED_IN },
+    });
+    if (!booking) throw new AppError("No active check-in for this room.");
+    bookingId = booking.id;
+  } else if (room.status === RoomStatus.RESERVED && data.bookingId) {
+    const booking = await prisma.booking.findUnique({ where: { id: data.bookingId } });
+    if (!booking || booking.roomId !== data.roomId || booking.status !== BookingStatus.RESERVED) {
+      throw new AppError("Invalid reservation for this room.");
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: BookingStatus.CHECKED_IN },
+      });
+      await tx.room.update({
+        where: { id: data.roomId },
+        data: { status: RoomStatus.OCCUPIED },
+      });
+    });
+    await logActivity("CHECK_IN", "Booking", booking.id);
+    bookingId = booking.id;
+  } else if (room.status === RoomStatus.AVAILABLE) {
+    const checkIn = new Date();
+    const checkOut = new Date(checkIn);
+    checkOut.setDate(checkOut.getDate() + nights);
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const b = await tx.booking.create({
+        data: {
+          guestId: data.guestId,
+          roomId: data.roomId,
+          checkIn,
+          checkOut,
+          adults: 1,
+          children: 0,
+          status: BookingStatus.CHECKED_IN,
+          totalAmount: 0,
+        },
+      });
+      await tx.room.update({
+        where: { id: data.roomId },
+        data: { status: RoomStatus.OCCUPIED },
+      });
+      return b;
+    });
+    await logActivity("CREATE", "Booking", booking.id);
+    await logActivity("CHECK_IN", "Booking", booking.id);
+    bookingId = booking.id;
+  } else {
+    throw new AppError("Room is not available for check-in.");
+  }
+
+  const existingAcc = await prisma.roomCharge.findFirst({
+    where: {
+      bookingId,
+      type: RoomChargeType.ACCOMMODATION,
+      voidedAt: null,
+      checkoutOrderId: null,
+    },
+  });
+
+  if (!existingAcc) {
+    const unitPrice = room.pricePerNight;
+    const total = calcAccommodationSubtotal(nights, unitPrice);
+    const charge = await prisma.roomCharge.create({
+      data: {
+        bookingId,
+        roomId: data.roomId,
+        type: RoomChargeType.ACCOMMODATION,
+        description: accommodationDescription(room.number),
+        quantity: nights,
+        unitPrice,
+        total,
+        userId: session.user.id,
+      },
+    });
+    await logActivity("ROOM_ACCOMMODATION_ADDED", "RoomCharge", charge.id, charge.description, {
+      roomId: data.roomId,
+      nights,
+      unitPrice,
+      total,
+    });
+  }
+
+  revalidateRoomBilling(data.roomId);
+  revalidatePath("/bookings");
+  return { roomId: data.roomId, bookingId };
 }
 
 function revalidateRoomBilling(roomId?: string) {
@@ -125,15 +387,22 @@ export async function getRoomAccount(roomId: string) {
       paymentsMade: 0,
       balanceDue: 0,
       grandTotal: 0,
+      hasAccommodation: false,
+      accommodationCharge: null,
+      otherCharges: [],
       charges: [],
       payments: [],
     };
   }
 
-  const { nightsStayed, accommodationSubtotal, postedChargesSubtotal, grandTotal } =
+  const { nightsStayed, accommodationSubtotal, postedChargesSubtotal, grandTotal, hasAccommodation } =
     computeFolioTotals(booking);
   const paymentsMade = await sumBookingPayments(booking.id);
   const balanceDue = Math.round(Math.max(0, grandTotal - paymentsMade) * 100) / 100;
+
+  const activeCharges = booking.roomCharges.filter((c) => !c.checkoutOrderId);
+  const accommodationCharge = activeCharges.find((c) => c.type === RoomChargeType.ACCOMMODATION) ?? null;
+  const otherCharges = activeCharges.filter((c) => c.type !== RoomChargeType.ACCOMMODATION);
 
   const folioPayments = await prisma.order.findMany({
     where: {
@@ -154,7 +423,10 @@ export async function getRoomAccount(roomId: string) {
     paymentsMade,
     balanceDue,
     grandTotal,
-    charges: booking.roomCharges.filter((c) => !c.checkoutOrderId),
+    hasAccommodation,
+    accommodationCharge,
+    otherCharges,
+    charges: activeCharges,
     payments: folioPayments,
   };
 }
@@ -274,6 +546,10 @@ export async function addManualRoomCharge(data: {
   if (data.quantity < 1) throw new AppError("Quantity must be at least 1.");
   if (!data.description.trim()) throw new AppError("Description is required.");
 
+  if (data.type === RoomChargeType.ACCOMMODATION) {
+    throw new AppError("Use Add Room Rate to add accommodation charges.");
+  }
+
   const booking = await getCheckedInBookingForRoom(data.roomId);
   const total = Math.round(data.quantity * data.unitPrice * 100) / 100;
 
@@ -334,7 +610,11 @@ export async function updateRoomBillingCharge(
     },
   });
 
-  await logActivity("ROOM_CHARGE_EDITED", "RoomCharge", id, charge.description, data);
+  const logAction =
+    existing.type === RoomChargeType.ACCOMMODATION || charge.type === RoomChargeType.ACCOMMODATION
+      ? "ROOM_ACCOMMODATION_UPDATED"
+      : "ROOM_CHARGE_EDITED";
+  await logActivity(logAction, "RoomCharge", id, charge.description, data);
   revalidateRoomBilling(existing.roomId);
   return charge;
 }
@@ -375,7 +655,12 @@ export async function voidRoomBillingCharge(id: string) {
     });
   });
 
-  await logActivity("ROOM_CHARGE_REMOVED", "RoomCharge", id, existing.description);
+  await logActivity(
+    existing.type === RoomChargeType.ACCOMMODATION ? "ROOM_ACCOMMODATION_VOIDED" : "ROOM_CHARGE_REMOVED",
+    "RoomCharge",
+    id,
+    existing.description
+  );
   revalidateRoomBilling(existing.roomId);
 }
 
@@ -583,9 +868,8 @@ export async function getRoomCheckoutInvoice(orderId: string) {
   const nightsStayed = order.booking
     ? calcNightsStayed(order.booking.checkIn, order.booking.checkOut, order.completedAt ?? new Date())
     : 0;
-  const accommodationSubtotal = order.room
-    ? calcAccommodationSubtotal(nightsStayed, order.room.pricePerNight)
-    : 0;
+  const accCharge = order.roomCharges.find((c) => c.type === RoomChargeType.ACCOMMODATION);
+  const accommodationSubtotal = accCharge?.total ?? 0;
 
   const folioPayments = await prisma.order.findMany({
     where: {

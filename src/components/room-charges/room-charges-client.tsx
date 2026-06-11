@@ -119,8 +119,9 @@ export function RoomChargesClient({ activeBookings, products }: RoomChargesClien
         <Card><CardContent className="py-12 text-center text-muted-foreground">No checked-in guests</CardContent></Card>
       ) : (
         activeBookings.map((booking) => {
-          const chargesTotal = booking.roomCharges.reduce((s, c) => s + c.total, 0);
-          const grandTotal = booking.totalAmount + chargesTotal;
+          const grandTotal = booking.roomCharges.reduce((s, c) => s + c.total, 0);
+          const accommodation = booking.roomCharges.find((c) => c.type === "ACCOMMODATION");
+          const otherTotal = booking.roomCharges.filter((c) => c.type !== "ACCOMMODATION").reduce((s, c) => s + c.total, 0);
           return (
             <Card key={booking.id} className="mb-4">
               <CardContent className="p-4">
@@ -130,9 +131,11 @@ export function RoomChargesClient({ activeBookings, products }: RoomChargesClien
                     <p className="text-sm text-muted-foreground">Room {booking.room.number}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Room: {formatCurrency(booking.totalAmount)}</p>
-                    <p className="text-sm text-muted-foreground">Charges: {formatCurrency(chargesTotal)}</p>
-                    <p className="text-lg font-bold text-gold">Total: {formatCurrency(grandTotal)}</p>
+                    {accommodation && (
+                      <p className="text-sm text-muted-foreground">Accommodation: {formatCurrency(accommodation.total)}</p>
+                    )}
+                    <p className="text-sm text-muted-foreground">Other charges: {formatCurrency(otherTotal)}</p>
+                    <p className="text-lg font-bold text-gold">Balance: {formatCurrency(grandTotal)}</p>
                   </div>
                 </div>
                 {booking.roomCharges.length > 0 && (
