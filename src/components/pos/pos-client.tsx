@@ -379,6 +379,9 @@ export function POSClient({ products, categories, taxRate }: POSPageProps) {
                 targetId="receipt"
                 receiptSize={settings.receiptSize}
                 receiptAlignment={settings.receiptAlignment}
+                receiptFontSize={settings.receiptFontSize}
+                receiptBoldText={settings.receiptBoldText}
+                receiptSpacing={settings.receiptSpacing}
                 receiptCompact={settings.receiptCompact}
                 className="w-full h-14 text-base touch-target print:hidden"
               />

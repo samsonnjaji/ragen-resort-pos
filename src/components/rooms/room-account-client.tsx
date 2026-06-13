@@ -71,6 +71,9 @@ interface RoomAccountClientProps {
     currency: string;
     receiptSize: string;
     receiptAlignment: string;
+    receiptFontSize: string;
+    receiptBoldText: boolean;
+    receiptSpacing: string;
     receiptCompact: boolean;
   };
   isAdmin: boolean;
@@ -658,6 +661,9 @@ export function RoomAccountClient({ account, products, settings, isAdmin }: Room
                   targetId="room-invoice"
                   receiptSize={settings.receiptSize}
                   receiptAlignment={settings.receiptAlignment}
+                  receiptFontSize={settings.receiptFontSize}
+                  receiptBoldText={settings.receiptBoldText}
+                  receiptSpacing={settings.receiptSpacing}
                   receiptCompact={settings.receiptCompact}
                   label="Print Invoice"
                   className="flex-1"

@@ -21,6 +21,9 @@ export default async function RoomsPage() {
         currency: settings.currency,
         receiptSize: settings.receiptSize,
         receiptAlignment: settings.receiptAlignment,
+        receiptFontSize: settings.receiptFontSize,
+        receiptBoldText: settings.receiptBoldText,
+        receiptSpacing: settings.receiptSpacing,
         receiptCompact: settings.receiptCompact,
       }}
     />

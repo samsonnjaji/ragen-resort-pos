@@ -51,6 +51,9 @@ export async function updateSettings(data: {
   receiptSize?: string;
   receiptAlignment?: string;
   receiptCompact?: boolean;
+  receiptFontSize?: string;
+  receiptBoldText?: boolean;
+  receiptSpacing?: string;
   taxRate?: number;
   currency?: string;
 }) {

@@ -1,8 +1,13 @@
 import {
   normalizeReceiptAlignment,
+  normalizeReceiptFontSize,
   normalizeReceiptSize,
+  normalizeReceiptSpacing,
   receiptAlignmentClass,
+  receiptFontSizeClass,
   receiptPrintSizeClass,
+  receiptSpacingClass,
+  type ReceiptFontSize,
   type ReceiptPrintTarget,
   type ReceiptSize,
 } from "@/lib/receipt-types";
@@ -19,6 +24,14 @@ const BODY_PRINT_CLASSES = [
   "receipt-80mm",
   "receipt-align-left",
   "receipt-align-center",
+  "receipt-font-small",
+  "receipt-font-normal",
+  "receipt-font-large",
+  "receipt-font-xl",
+  "receipt-spacing-compact",
+  "receipt-spacing-normal",
+  "receipt-spacing-spacious",
+  "receipt-bold-text",
   "receipt-compact",
 ] as const;
 
@@ -26,9 +39,13 @@ export interface PrintReceiptOptions {
   targetId?: ReceiptPrintTarget;
   receiptSize?: string | null;
   receiptAlignment?: string | null;
+  receiptFontSize?: string | null;
+  receiptBoldText?: boolean | null;
+  receiptSpacing?: string | null;
+  /** @deprecated use receiptSpacing */
   receiptCompact?: boolean | null;
-  /** Override saved paper size (hardware test buttons) */
   forceSize?: ReceiptSize;
+  forceFontSize?: ReceiptFontSize;
   onError?: (message: string) => void;
 }
 
@@ -44,17 +61,25 @@ function removePageStyle() {
   document.getElementById(PRINT_STYLE_ID)?.remove();
 }
 
-function applyPrintClasses(
-  size: ReceiptSize,
-  alignment: ReturnType<typeof normalizeReceiptAlignment>,
-  compact: boolean
-) {
-  const sizeClass = receiptPrintSizeClass(size);
-  const alignClass = receiptAlignmentClass(alignment);
+function applyPrintClasses(options: {
+  size: ReceiptSize;
+  alignment: ReturnType<typeof normalizeReceiptAlignment>;
+  fontSize: ReceiptFontSize;
+  spacing: ReturnType<typeof normalizeReceiptSpacing>;
+  bold: boolean;
+}) {
+  const classes = [
+    "thermal-printing",
+    receiptPrintSizeClass(options.size),
+    receiptAlignmentClass(options.alignment),
+    receiptFontSizeClass(options.fontSize),
+    receiptSpacingClass(options.spacing),
+  ];
+  if (options.bold) classes.push("receipt-bold-text");
+
   const targets = [document.documentElement, document.body];
   for (const node of targets) {
-    node.classList.add("thermal-printing", sizeClass, alignClass);
-    if (compact) node.classList.add("receipt-compact");
+    node.classList.add(...classes);
   }
 }
 
@@ -95,7 +120,11 @@ export function printThermalReceipt(options: PrintReceiptOptions = {}): boolean 
 
   const size = normalizeReceiptSize(options.forceSize ?? options.receiptSize);
   const alignment = normalizeReceiptAlignment(options.receiptAlignment);
-  const compact = Boolean(options.receiptCompact);
+  const fontSize = normalizeReceiptFontSize(
+    options.forceFontSize ?? options.receiptFontSize
+  );
+  const spacing = normalizeReceiptSpacing(options.receiptSpacing, options.receiptCompact);
+  const bold = options.receiptBoldText !== false;
 
   const cleanup = () => {
     removePrintPortal();
@@ -107,7 +136,7 @@ export function printThermalReceipt(options: PrintReceiptOptions = {}): boolean 
   try {
     mountPrintPortal(source);
     injectPageStyle(size);
-    applyPrintClasses(size, alignment, compact);
+    applyPrintClasses({ size, alignment, fontSize, spacing, bold });
     window.addEventListener("afterprint", cleanup);
 
     requestAnimationFrame(() => {

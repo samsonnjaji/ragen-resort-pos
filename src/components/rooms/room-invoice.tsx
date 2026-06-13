@@ -61,28 +61,28 @@ export function RoomInvoice(props: RoomInvoiceProps) {
   return (
     <div id="room-invoice" className={getReceiptLayoutClasses(props.settings)}>
       <div className="receipt-header">
-        <p className="font-bold uppercase">RAGEN RESORT POS</p>
-        <p>{props.settings.businessName}</p>
-        <p>Room Checkout Invoice</p>
-        {props.settings.businessAddress && <p>{props.settings.businessAddress}</p>}
-        {props.settings.phone && <p>Tel: {props.settings.phone}</p>}
+        <p className="receipt-business-name uppercase">RAGEN RESORT POS</p>
+        <p className="receipt-title">{props.settings.businessName}</p>
+        <p className="receipt-title">Room Checkout Invoice</p>
+        {props.settings.businessAddress && <p className="receipt-body">{props.settings.businessAddress}</p>}
+        {props.settings.phone && <p className="receipt-body">Tel: {props.settings.phone}</p>}
       </div>
 
-      <div className="receipt-sep">
+      <div className="receipt-sep receipt-body">
         <p>Invoice: {props.orderNumber}</p>
         <p>Date: {formatDate(props.completedAt)}</p>
         <p>Cashier: {props.cashierName}</p>
       </div>
 
-      <div className="receipt-sep">
-        <p className="font-bold">Guest</p>
+      <div className="receipt-box receipt-body">
+        <p className="receipt-title">Guest</p>
         <p>{props.guest.fullName}</p>
         <p>{props.guest.phone}</p>
         {props.guest.email && <p>{props.guest.email}</p>}
       </div>
 
-      <div className="receipt-sep">
-        <p className="font-bold">Room</p>
+      <div className="receipt-box receipt-body">
+        <p className="receipt-title">Room</p>
         <p>Room {props.room.number} — {props.room.type}</p>
         <p>Check-in: {formatDate(props.checkIn)}</p>
         <p>Check-out: {formatDate(props.checkOut)}</p>
@@ -125,16 +125,16 @@ export function RoomInvoice(props: RoomInvoiceProps) {
         />
       )}
 
-      <div className="receipt-sep">
-        <div className="receipt-between font-bold">
+      <div className="receipt-sep receipt-body">
+        <div className="receipt-between receipt-total">
           <span className="receipt-label">Grand Total</span>
           <span className="receipt-value">{formatCurrency(props.grandTotal, props.settings.currency)}</span>
         </div>
       </div>
 
       {props.payments.length > 0 && (
-        <div className="receipt-sep">
-          <p className="font-bold">Payments</p>
+        <div className="receipt-sep receipt-body">
+          <p className="receipt-title">Payments</p>
           {props.payments.map((p, i) => (
             <div key={i}>
               <div className="receipt-between">
@@ -148,12 +148,12 @@ export function RoomInvoice(props: RoomInvoiceProps) {
               )}
             </div>
           ))}
-          <div className="receipt-between font-bold">
+          <div className="receipt-between receipt-total">
             <span className="receipt-label">Total Paid</span>
             <span className="receipt-value">{formatCurrency(totalPaid, props.settings.currency)}</span>
           </div>
           {balance > 0.009 && (
-            <div className="receipt-between font-bold">
+            <div className="receipt-between receipt-total">
               <span className="receipt-label">Balance Due</span>
               <span className="receipt-value">{formatCurrency(balance, props.settings.currency)}</span>
             </div>
@@ -161,7 +161,7 @@ export function RoomInvoice(props: RoomInvoiceProps) {
         </div>
       )}
 
-      <p className="receipt-sep text-center">
+      <p className="receipt-sep receipt-footer text-center">
         Thank you for staying at {props.settings.businessName}
       </p>
     </div>
@@ -179,8 +179,8 @@ function Section({
 }) {
   return (
     <div className="receipt-sep">
-      <p className="font-bold">{title}</p>
-      <table className="receipt-table">
+      <p className="receipt-title">{title}</p>
+      <table className="receipt-table receipt-body">
         <thead>
           <tr>
             <th className="text-left">Description</th>

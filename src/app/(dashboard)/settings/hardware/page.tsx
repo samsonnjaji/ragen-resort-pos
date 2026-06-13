@@ -10,6 +10,9 @@ export default async function HardwareSettingsPage() {
         currency: settings.currency,
         receiptSize: settings.receiptSize,
         receiptAlignment: settings.receiptAlignment,
+        receiptFontSize: settings.receiptFontSize,
+        receiptBoldText: settings.receiptBoldText,
+        receiptSpacing: settings.receiptSpacing,
         receiptCompact: settings.receiptCompact,
       }}
     />

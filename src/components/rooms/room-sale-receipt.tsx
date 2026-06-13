@@ -49,25 +49,25 @@ export function RoomSaleReceipt({
   return (
     <div id="room-sale-receipt" className={getReceiptLayoutClasses(settings)}>
       <div className="receipt-header">
-        <p className="font-bold uppercase">RAGEN RESORT POS</p>
-        <p>{settings.businessName}</p>
-        <p>Room Sale Receipt</p>
-        {settings.businessAddress && <p>{settings.businessAddress}</p>}
+        <p className="receipt-business-name uppercase">RAGEN RESORT POS</p>
+        <p className="receipt-title">{settings.businessName}</p>
+        <p className="receipt-title">Room Sale Receipt</p>
+        {settings.businessAddress && <p className="receipt-body">{settings.businessAddress}</p>}
       </div>
 
-      <div className="receipt-sep">
+      <div className="receipt-sep receipt-body">
         <p>Receipt: {orderNumber}</p>
         <p>Date: {formatDate(completedAt)}</p>
         <p>Cashier: {cashierName}</p>
       </div>
 
-      <div className="receipt-sep">
-        <p className="font-bold">Customer: {customerName}</p>
+      <div className="receipt-box receipt-body">
+        <p className="receipt-title">Customer: {customerName}</p>
         {customerPhone && <p>Phone: {customerPhone}</p>}
         <p>Room {roomNumber} — {roomType}</p>
       </div>
 
-      <table className="receipt-table">
+      <table className="receipt-table receipt-body">
         <thead>
           <tr>
             <th className="text-left">Item</th>
@@ -84,19 +84,19 @@ export function RoomSaleReceipt({
         </tbody>
       </table>
 
-      <div className="receipt-sep">
+      <div className="receipt-sep receipt-body">
         <div className="receipt-between">
           <span className="receipt-label">Room Rate</span>
           <span className="receipt-value">{formatCurrency(unitPrice, settings.currency)}/night</span>
         </div>
-        <div className="receipt-between font-bold">
+        <div className="receipt-between receipt-total">
           <span className="receipt-label">Total</span>
           <span className="receipt-value">{formatCurrency(total, settings.currency)}</span>
         </div>
       </div>
 
-      <div className="receipt-sep">
-        <p className="font-bold">Payment</p>
+      <div className="receipt-sep receipt-body">
+        <p className="receipt-title">Payment</p>
         {payments.map((p, i) => (
           <div key={i}>
             <div className="receipt-between">
@@ -110,7 +110,7 @@ export function RoomSaleReceipt({
             )}
           </div>
         ))}
-        <div className="receipt-between font-bold">
+        <div className="receipt-between receipt-total">
           <span className="receipt-label">Paid</span>
           <span className="receipt-value">{formatCurrency(totalPaid, settings.currency)}</span>
         </div>
@@ -121,7 +121,7 @@ export function RoomSaleReceipt({
       </div>
 
       {settings.receiptFooter && (
-        <p className="receipt-sep text-center">{settings.receiptFooter}</p>
+        <p className="receipt-sep receipt-footer text-center">{settings.receiptFooter}</p>
       )}
     </div>
   );

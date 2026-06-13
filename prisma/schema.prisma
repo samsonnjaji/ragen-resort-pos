@@ -400,6 +400,9 @@ model Settings {
   receiptSize   String @default("80mm")
   receiptAlignment String @default("LEFT")
   receiptCompact Boolean @default(false)
+  receiptFontSize String @default("NORMAL")
+  receiptBoldText Boolean @default(true)
+  receiptSpacing String @default("NORMAL")
   taxRate       Float  @default(16)
   currency      String @default("KES")
   updatedAt     DateTime @updatedAt

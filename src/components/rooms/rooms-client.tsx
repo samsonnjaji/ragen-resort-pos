@@ -61,6 +61,9 @@ interface RoomsClientProps {
     currency: string;
     receiptSize: string;
     receiptAlignment: string;
+    receiptFontSize: string;
+    receiptBoldText: boolean;
+    receiptSpacing: string;
     receiptCompact: boolean;
   };
 }
@@ -375,6 +378,9 @@ export function RoomsClient({ rooms, folios, settings }: RoomsClientProps) {
                   targetId="room-sale-receipt"
                   receiptSize={settings.receiptSize}
                   receiptAlignment={settings.receiptAlignment}
+                  receiptFontSize={settings.receiptFontSize}
+                  receiptBoldText={settings.receiptBoldText}
+                  receiptSpacing={settings.receiptSpacing}
                   receiptCompact={settings.receiptCompact}
                   className="flex-1"
                 />

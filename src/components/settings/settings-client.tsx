@@ -28,6 +28,9 @@ interface SettingsClientProps {
     receiptFooter: string;
     receiptSize: string;
     receiptAlignment: string;
+    receiptFontSize: string;
+    receiptBoldText: boolean;
+    receiptSpacing: string;
     receiptCompact: boolean;
     taxRate: number;
     currency: string;
@@ -38,7 +41,9 @@ export function SettingsClient({ settings: initial }: SettingsClientProps) {
   const [loading, setLoading] = useState(false);
   const [receiptSize, setReceiptSize] = useState(initial.receiptSize || "80mm");
   const [receiptAlignment, setReceiptAlignment] = useState(initial.receiptAlignment || "LEFT");
-  const [receiptCompact, setReceiptCompact] = useState(initial.receiptCompact ?? false);
+  const [receiptFontSize, setReceiptFontSize] = useState(initial.receiptFontSize || "NORMAL");
+  const [receiptBoldText, setReceiptBoldText] = useState(initial.receiptBoldText ?? true);
+  const [receiptSpacing, setReceiptSpacing] = useState(initial.receiptSpacing || "NORMAL");
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -54,7 +59,10 @@ export function SettingsClient({ settings: initial }: SettingsClientProps) {
         receiptFooter: form.get("receiptFooter") as string,
         receiptSize,
         receiptAlignment,
-        receiptCompact,
+        receiptFontSize,
+        receiptBoldText,
+        receiptSpacing,
+        receiptCompact: receiptSpacing === "COMPACT",
         taxRate: Number(form.get("taxRate")),
         currency: form.get("currency") as string,
       });
@@ -108,42 +116,77 @@ export function SettingsClient({ settings: initial }: SettingsClientProps) {
                 <Input name="currency" defaultValue={initial.currency} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Receipt Paper Size</Label>
-                <Select value={receiptSize} onValueChange={setReceiptSize}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select receipt width" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="58mm">58mm thermal</SelectItem>
-                    <SelectItem value="80mm">80mm thermal</SelectItem>
-                  </SelectContent>
-                </Select>
+
+            <div className="rounded-lg border border-border/60 p-4 space-y-4">
+              <p className="font-medium text-sm">Receipt / Printer</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Receipt Paper Size</Label>
+                  <Select value={receiptSize} onValueChange={setReceiptSize}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Paper size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="58mm">58mm thermal</SelectItem>
+                      <SelectItem value="80mm">80mm thermal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Receipt Alignment</Label>
+                  <Select value={receiptAlignment} onValueChange={setReceiptAlignment}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Alignment" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LEFT">Left</SelectItem>
+                      <SelectItem value="CENTER">Center</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Receipt Font Size</Label>
+                  <Select value={receiptFontSize} onValueChange={setReceiptFontSize}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Font size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SMALL">Small</SelectItem>
+                      <SelectItem value="NORMAL">Normal</SelectItem>
+                      <SelectItem value="LARGE">Large</SelectItem>
+                      <SelectItem value="EXTRA_LARGE">Extra Large</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Receipt Spacing</Label>
+                  <Select value={receiptSpacing} onValueChange={setReceiptSpacing}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Spacing" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="COMPACT">Compact</SelectItem>
+                      <SelectItem value="NORMAL">Normal</SelectItem>
+                      <SelectItem value="SPACIOUS">Spacious</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Receipt Alignment</Label>
-                <Select value={receiptAlignment} onValueChange={setReceiptAlignment}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Alignment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LEFT">Left</SelectItem>
-                    <SelectItem value="CENTER">Center</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-2">
+                <input
+                  id="receiptBoldText"
+                  type="checkbox"
+                  checked={receiptBoldText}
+                  onChange={(e) => setReceiptBoldText(e.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <Label htmlFor="receiptBoldText">Bold receipt text (high contrast)</Label>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Tip: use Large font on 58mm paper and Left alignment if text looks small or shifted.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="receiptCompact"
-                type="checkbox"
-                checked={receiptCompact}
-                onChange={(e) => setReceiptCompact(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <Label htmlFor="receiptCompact">Compact receipt (smaller text, tighter spacing)</Label>
-            </div>
+
             <div className="space-y-2">
               <Label>Receipt Footer Message</Label>
               <Textarea name="receiptFooter" defaultValue={initial.receiptFooter} />

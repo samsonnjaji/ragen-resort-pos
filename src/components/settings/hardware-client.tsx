@@ -22,6 +22,9 @@ interface HardwareClientProps {
     currency: string;
     receiptSize: string;
     receiptAlignment: string;
+    receiptFontSize: string;
+    receiptBoldText: boolean;
+    receiptSpacing: string;
     receiptCompact: boolean;
   };
 }
@@ -33,11 +36,15 @@ export function HardwareClient({ settings }: HardwareClientProps) {
   const [previewSize, setPreviewSize] = useState<"58mm" | "80mm">(
     settings.receiptSize === "58mm" ? "58mm" : "80mm"
   );
+  const [previewFontSize, setPreviewFontSize] = useState<"NORMAL" | "LARGE">("NORMAL");
   const webBluetoothAvailable = isWebBluetoothAvailable();
 
   const printSettings = {
     receiptSize: settings.receiptSize,
     receiptAlignment: settings.receiptAlignment,
+    receiptFontSize: settings.receiptFontSize,
+    receiptBoldText: settings.receiptBoldText,
+    receiptSpacing: settings.receiptSpacing,
     receiptCompact: settings.receiptCompact,
   };
 
@@ -100,19 +107,44 @@ export function HardwareClient({ settings }: HardwareClientProps) {
               >
                 Preview 80mm
               </Button>
+              <Button
+                size="sm"
+                variant={previewFontSize === "NORMAL" ? "gold" : "outline"}
+                onClick={() => setPreviewFontSize("NORMAL")}
+              >
+                Preview Normal
+              </Button>
+              <Button
+                size="sm"
+                variant={previewFontSize === "LARGE" ? "gold" : "outline"}
+                onClick={() => setPreviewFontSize("LARGE")}
+              >
+                Preview Large
+              </Button>
             </div>
             <PrinterTestReceipt
               businessName={settings.businessName}
               currency={settings.currency}
               previewSize={previewSize}
+              previewFontSize={previewFontSize}
               {...printSettings}
             />
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               <ReceiptPrintButton
                 targetId="printer-test-receipt"
                 {...printSettings}
                 forceSize="58mm"
-                label="Print 58mm Test"
+                forceFontSize="NORMAL"
+                label="Print 58mm Test - Normal"
+                variant="outline"
+                className="w-full h-12 touch-target"
+              />
+              <ReceiptPrintButton
+                targetId="printer-test-receipt"
+                {...printSettings}
+                forceSize="58mm"
+                forceFontSize="LARGE"
+                label="Print 58mm Test - Large"
                 variant="outline"
                 className="w-full h-12 touch-target"
               />
@@ -120,14 +152,18 @@ export function HardwareClient({ settings }: HardwareClientProps) {
                 targetId="printer-test-receipt"
                 {...printSettings}
                 forceSize="80mm"
-                label="Print 80mm Test"
+                forceFontSize="NORMAL"
+                label="Print 80mm Test - Normal"
                 variant="outline"
                 className="w-full h-12 touch-target"
               />
               <ReceiptPrintButton
                 targetId="printer-test-receipt"
                 {...printSettings}
-                label="Print Test Receipt"
+                forceSize="80mm"
+                forceFontSize="LARGE"
+                label="Print 80mm Test - Large"
+                variant="outline"
                 className="w-full h-12 touch-target"
               />
             </div>
@@ -145,14 +181,15 @@ export function HardwareClient({ settings }: HardwareClientProps) {
                 </ol>
               </div>
               <div>
-                <p className="font-medium">If receipt prints tiny or shifted</p>
+                <p className="font-medium">If receipt is too small or shifted</p>
                 <ul className="list-disc list-inside space-y-1 text-muted-foreground mt-2">
-                  <li>Choose the correct paper size in the Android print dialog.</li>
-                  <li>Turn off &quot;Fit to page&quot;.</li>
-                  <li>Use scale 100%.</li>
+                  <li>Use 58mm if your paper is small.</li>
+                  <li>Use Large or Extra Large font in Settings.</li>
+                  <li>Use Left alignment.</li>
+                  <li>Disable Fit to Page.</li>
+                  <li>Set scale to 100%.</li>
+                  <li>Use margins none or minimum.</li>
                   <li>Use portrait orientation.</li>
-                  <li>Try the 58mm or 80mm setting in Settings.</li>
-                  <li>Try Left or Center receipt alignment in Settings.</li>
                 </ul>
               </div>
             </div>
@@ -168,13 +205,12 @@ export function HardwareClient({ settings }: HardwareClientProps) {
               <li>Turn the printer on.</li>
               <li>Pair it with the tablet via Bluetooth settings.</li>
               <li>Install the printer service or app if Android cannot see it.</li>
-              <li>Print a 58mm and 80mm test receipt from this page.</li>
+              <li>Print 58mm and 80mm test receipts from this page.</li>
               <li>
-                Set receipt paper size, alignment, and compact mode in{" "}
+                Set paper size, font size, alignment, spacing, and bold text in{" "}
                 <Link href="/settings" className="text-gold underline">
                   Settings
-                </Link>{" "}
-                based on your printer.
+                </Link>.
               </li>
             </ol>
           </CardContent>

@@ -61,6 +61,9 @@ interface OrdersClientProps {
     currency: string;
     receiptSize: string;
     receiptAlignment: string;
+    receiptFontSize: string;
+    receiptBoldText: boolean;
+    receiptSpacing: string;
     receiptCompact: boolean;
   };
   loadError?: string;
@@ -198,6 +201,9 @@ export function OrdersClient({ orders, settings, loadError }: OrdersClientProps)
                   targetId="receipt"
                   receiptSize={settings.receiptSize}
                   receiptAlignment={settings.receiptAlignment}
+                  receiptFontSize={settings.receiptFontSize}
+                  receiptBoldText={settings.receiptBoldText}
+                  receiptSpacing={settings.receiptSpacing}
                   receiptCompact={settings.receiptCompact}
                   className="flex-1 h-12 touch-target"
                 />

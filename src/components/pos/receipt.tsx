@@ -48,19 +48,19 @@ export function Receipt({ order, settings }: ReceiptProps) {
   return (
     <div id="receipt" className={getReceiptLayoutClasses(settings)}>
       <div className="receipt-header">
-        <p className="font-bold uppercase">RAGEN RESORT POS</p>
-        <p>{settings.businessName}</p>
-        {settings.businessAddress && <p>{settings.businessAddress}</p>}
-        {settings.phone && <p>Tel: {settings.phone}</p>}
+        <p className="receipt-business-name uppercase">RAGEN RESORT POS</p>
+        <p className="receipt-title">{settings.businessName}</p>
+        {settings.businessAddress && <p className="receipt-body">{settings.businessAddress}</p>}
+        {settings.phone && <p className="receipt-body">Tel: {settings.phone}</p>}
       </div>
 
-      <div className="receipt-sep">
+      <div className="receipt-sep receipt-body">
         <p>Receipt: {order.orderNumber}</p>
         <p>Date: {formatDate(order.createdAt)}</p>
         <p>Cashier: {order.user.name}</p>
       </div>
 
-      <table className="receipt-table">
+      <table className="receipt-table receipt-body">
         <thead>
           <tr>
             <th className="text-left">Item</th>
@@ -79,7 +79,7 @@ export function Receipt({ order, settings }: ReceiptProps) {
         </tbody>
       </table>
 
-      <div className="receipt-sep">
+      <div className="receipt-sep receipt-body">
         <div className="receipt-between">
           <span className="receipt-label">Subtotal</span>
           <span className="receipt-value">{formatCurrency(order.subtotal, settings.currency)}</span>
@@ -94,14 +94,14 @@ export function Receipt({ order, settings }: ReceiptProps) {
           <span className="receipt-label">Tax</span>
           <span className="receipt-value">{formatCurrency(order.tax, settings.currency)}</span>
         </div>
-        <div className="receipt-between font-bold">
+        <div className="receipt-between receipt-total">
           <span className="receipt-label">TOTAL</span>
           <span className="receipt-value">{formatCurrency(order.total, settings.currency)}</span>
         </div>
       </div>
 
-      <div className="receipt-sep">
-        <p className="font-bold">Payment</p>
+      <div className="receipt-sep receipt-body">
+        <p className="receipt-title">Payment</p>
         {single ? (
           <>
             <div className="receipt-between">
@@ -113,9 +113,7 @@ export function Receipt({ order, settings }: ReceiptProps) {
               <span className="receipt-value">{formatCurrency(payments[0].amount, settings.currency)}</span>
             </div>
             {payments[0].reference && (
-              <p>
-                {getPaymentMethodLabel(payments[0].method)} Ref: {payments[0].reference}
-              </p>
+              <p>{getPaymentMethodLabel(payments[0].method)} Ref: {payments[0].reference}</p>
             )}
           </>
         ) : (
@@ -131,7 +129,7 @@ export function Receipt({ order, settings }: ReceiptProps) {
                 )}
               </div>
             ))}
-            <div className="receipt-between font-bold">
+            <div className="receipt-between receipt-total">
               <span className="receipt-label">Total Paid</span>
               <span className="receipt-value">{formatCurrency(totalPaid, settings.currency)}</span>
             </div>
@@ -153,7 +151,7 @@ export function Receipt({ order, settings }: ReceiptProps) {
       </div>
 
       {settings.receiptFooter && (
-        <p className="receipt-sep text-center">{settings.receiptFooter}</p>
+        <p className="receipt-sep receipt-footer text-center">{settings.receiptFooter}</p>
       )}
     </div>
   );
