@@ -16,6 +16,8 @@ export default async function OrdersPage() {
           receiptFooter: settings.receiptFooter,
           currency: settings.currency,
           receiptSize: settings.receiptSize,
+          receiptAlignment: settings.receiptAlignment,
+          receiptCompact: settings.receiptCompact,
         }}
       />
     );
@@ -32,6 +34,8 @@ export default async function OrdersPage() {
           receiptFooter: "",
           currency: "KES",
           receiptSize: "80mm",
+          receiptAlignment: "LEFT",
+          receiptCompact: false,
         }}
         loadError="Unable to load orders. Check your connection and refresh."
       />

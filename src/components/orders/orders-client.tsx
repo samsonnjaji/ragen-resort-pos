@@ -60,6 +60,8 @@ interface OrdersClientProps {
     receiptFooter: string;
     currency: string;
     receiptSize: string;
+    receiptAlignment: string;
+    receiptCompact: boolean;
   };
   loadError?: string;
 }
@@ -195,6 +197,8 @@ export function OrdersClient({ orders, settings, loadError }: OrdersClientProps)
                 <ReceiptPrintButton
                   targetId="receipt"
                   receiptSize={settings.receiptSize}
+                  receiptAlignment={settings.receiptAlignment}
+                  receiptCompact={settings.receiptCompact}
                   className="flex-1 h-12 touch-target"
                 />
                 <Button variant="outline" className="flex-1" onClick={() => setReprintOrder(null)}>

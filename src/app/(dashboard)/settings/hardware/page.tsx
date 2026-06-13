@@ -9,6 +9,8 @@ export default async function HardwareSettingsPage() {
         businessName: settings.businessName,
         currency: settings.currency,
         receiptSize: settings.receiptSize,
+        receiptAlignment: settings.receiptAlignment,
+        receiptCompact: settings.receiptCompact,
       }}
     />
   );

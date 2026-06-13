@@ -1,62 +1,128 @@
 import {
+  normalizeReceiptAlignment,
   normalizeReceiptSize,
-  receiptSizeClass,
+  receiptAlignmentClass,
+  receiptPrintSizeClass,
   type ReceiptPrintTarget,
+  type ReceiptSize,
 } from "@/lib/receipt-types";
 
 export const PRINT_ERROR_MESSAGE =
   "Could not print. Check Bluetooth pairing, printer power, paper, and Android print service.";
 
-function applyPrintClasses(receiptSize: string) {
-  const sizeClass = receiptSizeClass(receiptSize);
-  document.body.classList.add("thermal-print-mode", sizeClass);
-  document.documentElement.classList.add("thermal-print-mode", sizeClass);
+const PRINT_STYLE_ID = "thermal-print-page-size";
+const PORTAL_ID = "thermal-print-portal";
+
+const BODY_PRINT_CLASSES = [
+  "thermal-printing",
+  "receipt-58mm",
+  "receipt-80mm",
+  "receipt-align-left",
+  "receipt-align-center",
+  "receipt-compact",
+] as const;
+
+export interface PrintReceiptOptions {
+  targetId?: ReceiptPrintTarget;
+  receiptSize?: string | null;
+  receiptAlignment?: string | null;
+  receiptCompact?: boolean | null;
+  /** Override saved paper size (hardware test buttons) */
+  forceSize?: ReceiptSize;
+  onError?: (message: string) => void;
+}
+
+function injectPageStyle(size: ReceiptSize) {
+  removePageStyle();
+  const style = document.createElement("style");
+  style.id = PRINT_STYLE_ID;
+  style.textContent = `@page { size: ${size} auto; margin: 0; }`;
+  document.head.appendChild(style);
+}
+
+function removePageStyle() {
+  document.getElementById(PRINT_STYLE_ID)?.remove();
+}
+
+function applyPrintClasses(
+  size: ReceiptSize,
+  alignment: ReturnType<typeof normalizeReceiptAlignment>,
+  compact: boolean
+) {
+  const sizeClass = receiptPrintSizeClass(size);
+  const alignClass = receiptAlignmentClass(alignment);
+  const targets = [document.documentElement, document.body];
+  for (const node of targets) {
+    node.classList.add("thermal-printing", sizeClass, alignClass);
+    if (compact) node.classList.add("receipt-compact");
+  }
 }
 
 function removePrintClasses() {
-  document.body.classList.remove(
-    "thermal-print-mode",
-    "receipt-size-58mm",
-    "receipt-size-80mm"
-  );
-  document.documentElement.classList.remove(
-    "thermal-print-mode",
-    "receipt-size-58mm",
-    "receipt-size-80mm"
-  );
+  const targets = [document.documentElement, document.body];
+  for (const node of targets) {
+    node.classList.remove(...BODY_PRINT_CLASSES);
+  }
 }
 
-export function printThermalReceipt(
-  targetId: ReceiptPrintTarget = "receipt",
-  receiptSize?: string | null,
-  onError?: (message: string) => void
-): boolean {
+function removePrintPortal() {
+  document.getElementById(PORTAL_ID)?.remove();
+}
+
+function mountPrintPortal(source: HTMLElement) {
+  removePrintPortal();
+  const portal = document.createElement("div");
+  portal.id = PORTAL_ID;
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.removeAttribute("id");
+  portal.appendChild(clone);
+  document.body.appendChild(portal);
+  return portal;
+}
+
+export function printThermalReceipt(options: PrintReceiptOptions = {}): boolean {
   if (typeof window === "undefined") {
-    onError?.(PRINT_ERROR_MESSAGE);
+    options.onError?.(PRINT_ERROR_MESSAGE);
     return false;
   }
 
-  const el = document.getElementById(targetId);
-  if (!el) {
-    onError?.(PRINT_ERROR_MESSAGE);
+  const targetId = options.targetId ?? "receipt";
+  const source = document.getElementById(targetId);
+  if (!source) {
+    options.onError?.(PRINT_ERROR_MESSAGE);
     return false;
   }
 
-  const size = normalizeReceiptSize(receiptSize);
+  const size = normalizeReceiptSize(options.forceSize ?? options.receiptSize);
+  const alignment = normalizeReceiptAlignment(options.receiptAlignment);
+  const compact = Boolean(options.receiptCompact);
 
   const cleanup = () => {
+    removePrintPortal();
+    removePageStyle();
     removePrintClasses();
     window.removeEventListener("afterprint", cleanup);
   };
 
   try {
-    applyPrintClasses(size);
+    mountPrintPortal(source);
+    injectPageStyle(size);
+    applyPrintClasses(size, alignment, compact);
     window.addEventListener("afterprint", cleanup);
-    window.print();
+
+    requestAnimationFrame(() => {
+      try {
+        window.print();
+      } catch {
+        cleanup();
+        options.onError?.(PRINT_ERROR_MESSAGE);
+      }
+    });
+
     return true;
   } catch {
     cleanup();
-    onError?.(PRINT_ERROR_MESSAGE);
+    options.onError?.(PRINT_ERROR_MESSAGE);
     return false;
   }
 }

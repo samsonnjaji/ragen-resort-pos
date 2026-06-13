@@ -49,6 +49,8 @@ export async function updateSettings(data: {
   email?: string;
   receiptFooter?: string;
   receiptSize?: string;
+  receiptAlignment?: string;
+  receiptCompact?: boolean;
   taxRate?: number;
   currency?: string;
 }) {

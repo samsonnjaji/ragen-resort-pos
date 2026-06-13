@@ -21,6 +21,8 @@ interface HardwareClientProps {
     businessName: string;
     currency: string;
     receiptSize: string;
+    receiptAlignment: string;
+    receiptCompact: boolean;
   };
 }
 
@@ -28,7 +30,16 @@ export function HardwareClient({ settings }: HardwareClientProps) {
   const { toast } = useToast();
   const [scannerTest, setScannerTest] = useState("");
   const [bluetoothDetecting, setBluetoothDetecting] = useState(false);
+  const [previewSize, setPreviewSize] = useState<"58mm" | "80mm">(
+    settings.receiptSize === "58mm" ? "58mm" : "80mm"
+  );
   const webBluetoothAvailable = isWebBluetoothAvailable();
+
+  const printSettings = {
+    receiptSize: settings.receiptSize,
+    receiptAlignment: settings.receiptAlignment,
+    receiptCompact: settings.receiptCompact,
+  };
 
   const handleDetectBluetooth = async () => {
     setBluetoothDetecting(true);
@@ -74,28 +85,76 @@ export function HardwareClient({ settings }: HardwareClientProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2 no-print">
+              <Button
+                size="sm"
+                variant={previewSize === "58mm" ? "gold" : "outline"}
+                onClick={() => setPreviewSize("58mm")}
+              >
+                Preview 58mm
+              </Button>
+              <Button
+                size="sm"
+                variant={previewSize === "80mm" ? "gold" : "outline"}
+                onClick={() => setPreviewSize("80mm")}
+              >
+                Preview 80mm
+              </Button>
+            </div>
             <PrinterTestReceipt
               businessName={settings.businessName}
               currency={settings.currency}
-              receiptSize={settings.receiptSize}
+              previewSize={previewSize}
+              {...printSettings}
             />
-            <ReceiptPrintButton
-              targetId="printer-test-receipt"
-              receiptSize={settings.receiptSize}
-              label="Print Test Receipt"
-              className="w-full h-12 touch-target"
-            />
-            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm space-y-2">
-              <p className="font-medium">How to print on Android</p>
-              <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                <li>Pair the Bluetooth printer in Android Settings first.</li>
-                <li>Open the POS in Chrome or the installed PWA.</li>
-                <li>Tap Print Test Receipt.</li>
-                <li>Select the thermal printer from the Android print dialog.</li>
-                <li>
-                  If the printer does not appear, install the printer&apos;s Android print service or app.
-                </li>
-              </ol>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <ReceiptPrintButton
+                targetId="printer-test-receipt"
+                {...printSettings}
+                forceSize="58mm"
+                label="Print 58mm Test"
+                variant="outline"
+                className="w-full h-12 touch-target"
+              />
+              <ReceiptPrintButton
+                targetId="printer-test-receipt"
+                {...printSettings}
+                forceSize="80mm"
+                label="Print 80mm Test"
+                variant="outline"
+                className="w-full h-12 touch-target"
+              />
+              <ReceiptPrintButton
+                targetId="printer-test-receipt"
+                {...printSettings}
+                label="Print Test Receipt"
+                className="w-full h-12 touch-target"
+              />
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm space-y-3">
+              <div>
+                <p className="font-medium">How to print on Android</p>
+                <ol className="list-decimal list-inside space-y-1 text-muted-foreground mt-2">
+                  <li>Pair the Bluetooth printer in Android Settings first.</li>
+                  <li>Open the POS in Chrome or the installed PWA.</li>
+                  <li>Tap a print test button.</li>
+                  <li>Select the thermal printer from the Android print dialog.</li>
+                  <li>
+                    If the printer does not appear, install the printer&apos;s Android print service or app.
+                  </li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-medium">If receipt prints tiny or shifted</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground mt-2">
+                  <li>Choose the correct paper size in the Android print dialog.</li>
+                  <li>Turn off &quot;Fit to page&quot;.</li>
+                  <li>Use scale 100%.</li>
+                  <li>Use portrait orientation.</li>
+                  <li>Try the 58mm or 80mm setting in Settings.</li>
+                  <li>Try Left or Center receipt alignment in Settings.</li>
+                </ul>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -109,13 +168,13 @@ export function HardwareClient({ settings }: HardwareClientProps) {
               <li>Turn the printer on.</li>
               <li>Pair it with the tablet via Bluetooth settings.</li>
               <li>Install the printer service or app if Android cannot see it.</li>
-              <li>Print a test receipt from this page.</li>
+              <li>Print a 58mm and 80mm test receipt from this page.</li>
               <li>
-                Set receipt paper size to 58mm or 80mm in{" "}
+                Set receipt paper size, alignment, and compact mode in{" "}
                 <Link href="/settings" className="text-gold underline">
                   Settings
                 </Link>{" "}
-                based on your printer paper.
+                based on your printer.
               </li>
             </ol>
           </CardContent>

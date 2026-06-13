@@ -3,7 +3,7 @@
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { getPaymentMethodLabel, getTotalPaid } from "@/lib/payments";
 import { PaymentMethod, RoomChargeType } from "@prisma/client";
-import { receiptSizeClass } from "@/lib/receipt-types";
+import { getReceiptLayoutClasses, type ReceiptLayoutSettings } from "@/lib/receipt-types";
 
 interface RoomInvoiceProps {
   orderNumber: string;
@@ -25,13 +25,12 @@ interface RoomInvoiceProps {
   }>;
   payments: Array<{ method: string; amount: number; reference?: string | null; createdAt?: Date | string }>;
   grandTotal: number;
-  settings: {
+  settings: ReceiptLayoutSettings & {
     businessName: string;
     businessAddress: string;
     phone: string;
     email: string;
     currency: string;
-    receiptSize?: string;
   };
 }
 
@@ -60,48 +59,47 @@ export function RoomInvoice(props: RoomInvoiceProps) {
   const balance = Math.max(0, props.grandTotal - totalPaid);
 
   return (
-    <div
-      id="room-invoice"
-      className={`receipt-thermal mx-auto p-2 ${receiptSizeClass(props.settings.receiptSize)}`}
-    >
-      <div className="text-center mb-2 border-b border-dashed border-gray-500 pb-1.5">
-        <h2 className="text-xs font-bold uppercase">RAGEN RESORT POS</h2>
-        <p className="text-[10px] font-semibold mt-0.5">{props.settings.businessName}</p>
-        <p className="text-[10px] mt-0.5">Room Checkout Invoice</p>
-        {props.settings.businessAddress && (
-          <p className="text-[10px] mt-0.5">{props.settings.businessAddress}</p>
-        )}
-        {props.settings.phone && <p className="text-[10px]">Tel: {props.settings.phone}</p>}
+    <div id="room-invoice" className={getReceiptLayoutClasses(props.settings)}>
+      <div className="receipt-header">
+        <p className="font-bold uppercase">RAGEN RESORT POS</p>
+        <p>{props.settings.businessName}</p>
+        <p>Room Checkout Invoice</p>
+        {props.settings.businessAddress && <p>{props.settings.businessAddress}</p>}
+        {props.settings.phone && <p>Tel: {props.settings.phone}</p>}
       </div>
 
-      <div className="text-[10px] space-y-0.5 mb-2">
+      <div className="receipt-sep">
         <p>Invoice: {props.orderNumber}</p>
         <p>Date: {formatDate(props.completedAt)}</p>
         <p>Cashier: {props.cashierName}</p>
       </div>
 
-      <div className="border border-dashed border-gray-400 p-1.5 mb-2 text-[10px]">
-        <p className="font-semibold mb-0.5">Guest</p>
+      <div className="receipt-sep">
+        <p className="font-bold">Guest</p>
         <p>{props.guest.fullName}</p>
         <p>{props.guest.phone}</p>
         {props.guest.email && <p>{props.guest.email}</p>}
       </div>
 
-      <div className="border border-dashed border-gray-400 p-1.5 mb-2 text-[10px]">
-        <p className="font-semibold mb-0.5">Room</p>
+      <div className="receipt-sep">
+        <p className="font-bold">Room</p>
         <p>Room {props.room.number} — {props.room.type}</p>
         <p>Check-in: {formatDate(props.checkIn)}</p>
         <p>Check-out: {formatDate(props.checkOut)}</p>
         <p>Nights: {props.nightsStayed} × {formatCurrency(props.roomRate, props.settings.currency)}/night</p>
       </div>
 
-      <Section title="Accommodation" items={[
-        {
-          desc: `Room ${props.room.number} (${props.nightsStayed} night${props.nightsStayed !== 1 ? "s" : ""})`,
-          qty: props.nightsStayed,
-          total: props.accommodationSubtotal,
-        },
-      ]} currency={props.settings.currency} />
+      <Section
+        title="Accommodation"
+        items={[
+          {
+            desc: `Room ${props.room.number} (${props.nightsStayed} night${props.nightsStayed !== 1 ? "s" : ""})`,
+            qty: props.nightsStayed,
+            total: props.accommodationSubtotal,
+          },
+        ]}
+        currency={props.settings.currency}
+      />
 
       {productCharges.length > 0 && (
         <Section
@@ -127,43 +125,43 @@ export function RoomInvoice(props: RoomInvoiceProps) {
         />
       )}
 
-      <div className="border-t border-dashed border-gray-500 pt-1.5 mt-2 space-y-0.5 text-[10px]">
-        <div className="flex justify-between font-bold">
-          <span>Grand Total</span>
-          <span>{formatCurrency(props.grandTotal, props.settings.currency)}</span>
+      <div className="receipt-sep">
+        <div className="receipt-between font-bold">
+          <span className="receipt-label">Grand Total</span>
+          <span className="receipt-value">{formatCurrency(props.grandTotal, props.settings.currency)}</span>
         </div>
       </div>
 
       {props.payments.length > 0 && (
-        <div className="mt-2 text-[10px] border-t border-dashed border-gray-500 pt-1.5">
-          <p className="font-semibold mb-0.5">Payments</p>
+        <div className="receipt-sep">
+          <p className="font-bold">Payments</p>
           {props.payments.map((p, i) => (
             <div key={i}>
-              <div className="flex justify-between">
-                <span>{getPaymentMethodLabel(p.method)}</span>
-                <span>{formatCurrency(p.amount, props.settings.currency)}</span>
+              <div className="receipt-between">
+                <span className="receipt-label">{getPaymentMethodLabel(p.method)}</span>
+                <span className="receipt-value">{formatCurrency(p.amount, props.settings.currency)}</span>
               </div>
               {p.reference && (
-                <p className="text-[9px]">
+                <p>
                   {p.method === "MPESA" ? "M-Pesa" : getPaymentMethodLabel(p.method)} Ref: {p.reference}
                 </p>
               )}
             </div>
           ))}
-          <div className="flex justify-between font-semibold mt-0.5 border-t border-gray-400 pt-0.5">
-            <span>Total Paid</span>
-            <span>{formatCurrency(totalPaid, props.settings.currency)}</span>
+          <div className="receipt-between font-bold">
+            <span className="receipt-label">Total Paid</span>
+            <span className="receipt-value">{formatCurrency(totalPaid, props.settings.currency)}</span>
           </div>
           {balance > 0.009 && (
-            <div className="flex justify-between font-semibold">
-              <span>Balance Due</span>
-              <span>{formatCurrency(balance, props.settings.currency)}</span>
+            <div className="receipt-between font-bold">
+              <span className="receipt-label">Balance Due</span>
+              <span className="receipt-value">{formatCurrency(balance, props.settings.currency)}</span>
             </div>
           )}
         </div>
       )}
 
-      <p className="text-center text-[10px] mt-2 pt-1.5 border-t border-dashed border-gray-400">
+      <p className="receipt-sep text-center">
         Thank you for staying at {props.settings.businessName}
       </p>
     </div>
@@ -180,20 +178,20 @@ function Section({
   currency: string;
 }) {
   return (
-    <div className="mb-3">
-      <p className="font-semibold text-[10px] mb-0.5">{title}</p>
-      <table className="w-full text-[10px]">
+    <div className="receipt-sep">
+      <p className="font-bold">{title}</p>
+      <table className="receipt-table">
         <thead>
-          <tr className="border-b border-gray-300">
-            <th className="text-left py-1">Description</th>
-            <th className="text-center w-8">Qty</th>
-            <th className="text-right">Amount</th>
+          <tr>
+            <th className="text-left">Description</th>
+            <th className="text-center" style={{ width: "18%" }}>Qty</th>
+            <th className="text-right" style={{ width: "28%" }}>Amt</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, i) => (
             <tr key={i}>
-              <td className="py-0.5 pr-1">{item.desc}</td>
+              <td>{item.desc}</td>
               <td className="text-center">{item.qty}</td>
               <td className="text-right">{formatCurrency(item.total, currency)}</td>
             </tr>

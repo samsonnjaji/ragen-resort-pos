@@ -60,6 +60,8 @@ interface RoomsClientProps {
     receiptFooter: string;
     currency: string;
     receiptSize: string;
+    receiptAlignment: string;
+    receiptCompact: boolean;
   };
 }
 
@@ -372,6 +374,8 @@ export function RoomsClient({ rooms, folios, settings }: RoomsClientProps) {
                 <ReceiptPrintButton
                   targetId="room-sale-receipt"
                   receiptSize={settings.receiptSize}
+                  receiptAlignment={settings.receiptAlignment}
+                  receiptCompact={settings.receiptCompact}
                   className="flex-1"
                 />
                 <Button variant="outline" className="flex-1" onClick={() => setSaleReceipt(null)}>Close</Button>

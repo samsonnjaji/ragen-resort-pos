@@ -1,63 +1,77 @@
 "use client";
 
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { receiptSizeClass } from "@/lib/receipt-types";
+import { getReceiptLayoutClasses, type ReceiptLayoutSettings } from "@/lib/receipt-types";
 
-interface PrinterTestReceiptProps {
+interface PrinterTestReceiptProps extends ReceiptLayoutSettings {
   businessName: string;
   currency: string;
-  receiptSize?: string;
+  previewSize?: "58mm" | "80mm";
+  label?: string;
 }
 
 export function PrinterTestReceipt({
   businessName,
   currency,
   receiptSize,
+  receiptAlignment,
+  receiptCompact,
+  previewSize,
+  label = "Printer Test",
 }: PrinterTestReceiptProps) {
   const now = new Date();
+  const layout = getReceiptLayoutClasses(
+    { receiptSize, receiptAlignment, receiptCompact },
+    previewSize
+  );
 
   return (
-    <div
-      id="printer-test-receipt"
-      className={`receipt-thermal mx-auto p-2 ${receiptSizeClass(receiptSize)}`}
-    >
-      <div className="text-center mb-2">
-        <h2 className="text-xs font-bold uppercase">RAGEN RESORT POS</h2>
-        <p className="text-[10px] font-semibold mt-0.5">{businessName}</p>
+    <div id="printer-test-receipt" className={layout}>
+      <div className="receipt-header">
+        <p className="font-bold uppercase">RAGEN RESORT POS</p>
+        <p>{businessName}</p>
       </div>
 
-      <div className="border-t border-b border-dashed border-gray-500 py-1.5 mb-1.5 text-[10px] text-center">
-        <p className="font-bold">Printer Test</p>
-        <p>Date: {formatDate(now)}</p>
+      <div className="receipt-sep text-center">
+        <p className="font-bold">{label}</p>
+        <p>{previewSize ?? receiptSize ?? "80mm"} paper test</p>
+        <p>{formatDate(now)}</p>
       </div>
 
-      <table className="w-full mb-1.5 text-[10px]">
+      <table className="receipt-table">
         <thead>
-          <tr className="border-b border-gray-400">
-            <th className="text-left py-0.5">Item</th>
-            <th className="text-center py-0.5 w-7">Qty</th>
-            <th className="text-right py-0.5">Amt</th>
+          <tr>
+            <th className="text-left">Item</th>
+            <th className="text-center" style={{ width: "18%" }}>Qty</th>
+            <th className="text-right" style={{ width: "28%" }}>Amt</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td className="py-0.5">Sample Item</td>
+            <td>Sample Item</td>
             <td className="text-center">1</td>
+            <td className="text-right">{formatCurrency(0, currency)}</td>
+          </tr>
+          <tr>
+            <td>Test Line 2</td>
+            <td className="text-center">2</td>
             <td className="text-right">{formatCurrency(0, currency)}</td>
           </tr>
         </tbody>
       </table>
 
-      <div className="border-t border-dashed border-gray-500 pt-1 text-[10px]">
-        <div className="flex justify-between font-bold">
-          <span>Total</span>
-          <span>{formatCurrency(0, currency)}</span>
+      <div className="receipt-sep">
+        <div className="receipt-between">
+          <span className="receipt-label">Subtotal</span>
+          <span className="receipt-value">{formatCurrency(0, currency)}</span>
+        </div>
+        <div className="receipt-between font-bold">
+          <span className="receipt-label">TOTAL</span>
+          <span className="receipt-value">{formatCurrency(0, currency)}</span>
         </div>
       </div>
 
-      <p className="text-center mt-2 text-[10px] font-semibold border-t border-dashed border-gray-400 pt-1.5">
-        Printer test successful
-      </p>
+      <p className="receipt-sep text-center font-bold">Printer test successful</p>
     </div>
   );
 }

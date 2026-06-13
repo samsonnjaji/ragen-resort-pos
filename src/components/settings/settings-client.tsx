@@ -27,6 +27,8 @@ interface SettingsClientProps {
     email: string;
     receiptFooter: string;
     receiptSize: string;
+    receiptAlignment: string;
+    receiptCompact: boolean;
     taxRate: number;
     currency: string;
   };
@@ -35,6 +37,8 @@ interface SettingsClientProps {
 export function SettingsClient({ settings: initial }: SettingsClientProps) {
   const [loading, setLoading] = useState(false);
   const [receiptSize, setReceiptSize] = useState(initial.receiptSize || "80mm");
+  const [receiptAlignment, setReceiptAlignment] = useState(initial.receiptAlignment || "LEFT");
+  const [receiptCompact, setReceiptCompact] = useState(initial.receiptCompact ?? false);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -49,6 +53,8 @@ export function SettingsClient({ settings: initial }: SettingsClientProps) {
         email: form.get("email") as string,
         receiptFooter: form.get("receiptFooter") as string,
         receiptSize,
+        receiptAlignment,
+        receiptCompact,
         taxRate: Number(form.get("taxRate")),
         currency: form.get("currency") as string,
       });
@@ -102,20 +108,41 @@ export function SettingsClient({ settings: initial }: SettingsClientProps) {
                 <Input name="currency" defaultValue={initial.currency} />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Receipt Paper Size</Label>
-              <Select value={receiptSize} onValueChange={setReceiptSize}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select receipt width" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="58mm">58mm thermal</SelectItem>
-                  <SelectItem value="80mm">80mm thermal</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Match this to your Bluetooth printer paper width for correct receipt layout.
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Receipt Paper Size</Label>
+                <Select value={receiptSize} onValueChange={setReceiptSize}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select receipt width" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="58mm">58mm thermal</SelectItem>
+                    <SelectItem value="80mm">80mm thermal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Receipt Alignment</Label>
+                <Select value={receiptAlignment} onValueChange={setReceiptAlignment}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Alignment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LEFT">Left</SelectItem>
+                    <SelectItem value="CENTER">Center</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="receiptCompact"
+                type="checkbox"
+                checked={receiptCompact}
+                onChange={(e) => setReceiptCompact(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              <Label htmlFor="receiptCompact">Compact receipt (smaller text, tighter spacing)</Label>
             </div>
             <div className="space-y-2">
               <Label>Receipt Footer Message</Label>

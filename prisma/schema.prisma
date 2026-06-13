@@ -398,6 +398,8 @@ model Settings {
   email         String @default("")
   receiptFooter String @default("Thank you for choosing RAGEN RESORT!")
   receiptSize   String @default("80mm")
+  receiptAlignment String @default("LEFT")
+  receiptCompact Boolean @default(false)
   taxRate       Float  @default(16)
   currency      String @default("KES")
   updatedAt     DateTime @updatedAt

@@ -20,6 +20,8 @@ export default async function RoomsPage() {
         receiptFooter: settings.receiptFooter,
         currency: settings.currency,
         receiptSize: settings.receiptSize,
+        receiptAlignment: settings.receiptAlignment,
+        receiptCompact: settings.receiptCompact,
       }}
     />
   );

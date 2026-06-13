@@ -41,6 +41,8 @@ export default async function RoomAccountPage({
         email: settings.email,
         currency: settings.currency,
         receiptSize: settings.receiptSize,
+        receiptAlignment: settings.receiptAlignment,
+        receiptCompact: settings.receiptCompact,
       }}
       isAdmin={session?.user?.role === "ADMIN"}
     />
